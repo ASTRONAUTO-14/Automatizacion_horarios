@@ -1,13 +1,14 @@
 'use client';
 
-import { FormEvent, useMemo, useState } from 'react';
+import { FormEvent, useMemo, useState, useEffect } from 'react';
 import Modal from './Modal';
 import Toast from './Toast';
-import { Course, Teacher, Classroom, Conflict, ToastMessage } from './types';
+import { Course, Teacher, Classroom, Conflict, ToastMessage, CourseTypeValue, RoomTypeValue } from './types';
 import { DAYS, DAY_SHORT, SLOTS, COURSE_TYPES, ROOM_TYPES, PROGRAMS, sampleCourses, sampleTeachers, sampleClassrooms } from './data';
 import { generateSchedule, detectConflicts } from './scheduler';
 import { typeBadge, roomBadge, sumRoomUsage, sumTeacherLoad } from './utils';
 import styles from './Interfaz.module.css';
+import ExcelImport from '../app/components/ExcelImport';
 
 type AppTab = 'dashboard' | 'courses' | 'teachers' | 'classrooms' | 'schedule';
 type ModalType = 'course' | 'teacher' | 'classroom' | null;
@@ -50,6 +51,101 @@ export default function MainMenu({ username, onLogout }: MainMenuProps) {
   const [tempAvailability, setTempAvailability] = useState<Record<number, number[]>>(emptyAvail);
   const [toastMessages, setToastMessages] = useState<ToastMessage[]>([]);
   const [showWelcome, setShowWelcome] = useState(true);
+
+  const fetchAllData = async () => {
+    try {
+      const [resCursos, resDocentes, resAulas, resHorarios] = await Promise.all([
+        fetch('/api/cursos'),
+        fetch('/api/docentes'),
+        fetch('/api/aulas'),
+        fetch('/api/horarios'),
+      ]);
+
+      const dataCursos = await resCursos.json();
+      const dataDocentes = await resDocentes.json();
+      const dataAulas = await resAulas.json();
+      const dataHorarios = await resHorarios.json();
+
+      const mappedTeachers = Array.isArray(dataDocentes) ? dataDocentes.map((t: any) => ({
+        id: t.id_docente,
+        name: t.ape_docente && t.ape_docente !== 'Desconocido' ? `${t.nom_docente} ${t.ape_docente}`.trim() : t.nom_docente,
+        availability: t.disponibilidad || { 0: [], 1: [], 2: [], 3: [], 4: [] }
+      })) : [];
+      setTeachers(mappedTeachers);
+
+      const mappedClassrooms = Array.isArray(dataAulas) ? dataAulas.map((a: any) => ({
+        id: a.id_aula,
+        name: a.nom_aula,
+        type: (['classroom', 'computer-lab', 'workshop', 'practical-lab'].includes(a.id_tipo_aula) ? a.id_tipo_aula : 'classroom') as RoomTypeValue,
+        capacity: a.capacidad
+      })) : [];
+      setClassrooms(mappedClassrooms);
+
+      const mappedCourses = Array.isArray(dataCursos) ? dataCursos.map((c: any) => ({
+        id: c.id_curso,
+        name: c.nom_curso,
+        type: (['theoretical', 'programming', 'electronics', 'nursing'].includes(c.tipo_curso) ? c.tipo_curso : 'theoretical') as CourseTypeValue,
+        theoreticalHours: c.horas_teoricas || 0,
+        practicalHours: c.horas_practicas || 0,
+        students: c.alumnos || 0,
+        program: c.carrera ? c.carrera.nom_carrera : 'General',
+        semester: c.id_ciclo || 1,
+        teacherId: c.id_docente || ''
+      })) : [];
+      setCourses(mappedCourses);
+
+      if (dataHorarios && dataHorarios.length > 0) {
+        const tempSchedule: Record<string, any[]> = {};
+        for (const h of dataHorarios) {
+          let dayIndex = 0;
+          const dStr = h.dia.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+          if (dStr.includes("lun")) dayIndex = 0;
+          else if (dStr.includes("mar")) dayIndex = 1;
+          else if (dStr.includes("mie")) dayIndex = 2;
+          else if (dStr.includes("jue")) dayIndex = 3;
+          else if (dStr.includes("vie")) dayIndex = 4;
+
+          let slotIndex = 0;
+          const match = h.horario_inicio.match(/(\d{1,2})/);
+          if (match) {
+            const hr = parseInt(match[1], 10);
+            if (hr >= 7 && hr < 9) slotIndex = 0;
+            else if (hr >= 9 && hr < 11) slotIndex = 1;
+            else if (hr >= 11 && hr < 14) slotIndex = 2;
+            else if (hr >= 14 && hr < 16) slotIndex = 3;
+            else if (hr >= 16 && hr < 19) slotIndex = 4;
+          }
+
+          const key = `${dayIndex}-${slotIndex}`;
+          if (!tempSchedule[key]) {
+            tempSchedule[key] = [];
+          }
+          tempSchedule[key].push({
+            courseId: h.id_curso,
+            teacherId: h.id_docente,
+            roomId: h.id_aula,
+            sessionType: h.tipo_sesion || 'theoretical'
+          });
+        }
+        setSchedule(tempSchedule);
+
+        const loadedConflicts = detectConflicts(tempSchedule, mappedCourses, mappedTeachers, mappedClassrooms);
+        setConflicts(loadedConflicts);
+      } else {
+        setSchedule(null);
+        setConflicts([]);
+      }
+    } catch (e) {
+      console.error("Error al cargar datos desde API:", e);
+      toast("Error de red al cargar los datos desde la base de datos", "error");
+    }
+  };
+
+  useEffect(() => {
+    fetch('/api/master-data')
+      .then(() => fetchAllData())
+      .catch((e) => console.error("Error de inicialización de datos maestros:", e));
+  }, []);
 
   const totalSessions = schedule ? Object.values(schedule).flat().length : 0;
   const theorySessions = schedule ? Object.values(schedule).flat().filter((session) => session.sessionType === 'theoretical').length : 0;
@@ -98,22 +194,62 @@ export default function MainMenu({ username, onLogout }: MainMenuProps) {
   };
 
   const handleLoadSample = () => {
-    setCourses(sampleCourses());
-    setTeachers(sampleTeachers());
-    setClassrooms(sampleClassrooms());
-    setSchedule(null);
-    setConflicts([]);
-    toast('Datos de demostración cargados correctamente', 'success');
+    toast('Cargando datos de demostración...', 'info');
+    fetch('/api/horarios', { method: 'DELETE' })
+      .then(() => {
+        const pTeachers = sampleTeachers().map(t => 
+          fetch('/api/docentes', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(t)
+          })
+        );
+        const pClassrooms = sampleClassrooms().map(r => 
+          fetch('/api/aulas', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(r)
+          })
+        );
+        return Promise.all([...pTeachers, ...pClassrooms]);
+      })
+      .then(() => {
+        const pCourses = sampleCourses().map(c => 
+          fetch('/api/cursos', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(c)
+          })
+        );
+        return Promise.all(pCourses);
+      })
+      .then(() => {
+        toast('Datos de demostración cargados en base de datos', 'success');
+        fetchAllData();
+      })
+      .catch(e => {
+        console.error(e);
+        toast('Error al cargar datos de demostración', 'error');
+      });
   };
 
   const handleResetAll = () => {
-    setCourses([]);
-    setTeachers([]);
-    setClassrooms([]);
-    setSchedule(null);
-    setConflicts([]);
-    setScheduleFilter('all');
-    toast('Todos los datos han sido reiniciados', 'info');
+    if (!confirm('¿Estás seguro de reiniciar todos los datos? Se borrará todo en la base de datos.')) return;
+    toast('Reiniciando base de datos...', 'info');
+    fetch('/api/horarios', { method: 'DELETE' })
+      .then(() => Promise.all([
+        fetch('/api/cursos').then(res => res.json()).then(data => Promise.all(data.map((c: any) => fetch(`/api/cursos/${c.id_curso}`, { method: 'DELETE' })))),
+        fetch('/api/docentes').then(res => res.json()).then(data => Promise.all(data.map((t: any) => fetch(`/api/docentes/${t.id_docente}`, { method: 'DELETE' })))),
+        fetch('/api/aulas').then(res => res.json()).then(data => Promise.all(data.map((r: any) => fetch(`/api/aulas/${r.id_aula}`, { method: 'DELETE' }))))
+      ]))
+      .then(() => {
+        toast('Todos los datos han sido reiniciados', 'info');
+        fetchAllData();
+      })
+      .catch(e => {
+        console.error(e);
+        toast('Error al reiniciar los datos', 'error');
+      });
   };
 
   const handleGenerate = (shuffle = false) => {
@@ -126,39 +262,99 @@ export default function MainMenu({ username, onLogout }: MainMenuProps) {
     setSchedule(result.schedule);
     setConflicts(fullConflicts);
     if (fullConflicts.filter((item) => item.severity === 'error').length === 0) {
-      toast('Horario generado exitosamente — sin conflictos', 'success');
+      toast('Horario generado localmente. ¡Haz clic en Guardar para persistirlo!', 'success');
     } else {
-      toast(`Horario generado con ${fullConflicts.filter((item) => item.severity === 'error').length} conflicto(s)`, 'warning');
+      toast(`Horario generado con ${fullConflicts.filter((item) => item.severity === 'error').length} conflicto(s). ¡Haz clic en Guardar para persistirlo!`, 'warning');
     }
     setActiveTab('schedule');
   };
 
+  const handleSaveSchedule = async () => {
+    if (!schedule) return;
+    const sessionsList: any[] = [];
+    Object.entries(schedule).forEach(([key, sessions]) => {
+      const [dayIndex, slotIndex] = key.split('-').map(Number);
+      sessions.forEach((session) => {
+        sessionsList.push({
+          courseId: session.courseId,
+          teacherId: session.teacherId,
+          roomId: session.roomId,
+          sessionType: session.sessionType,
+          day: dayIndex,
+          slot: slotIndex
+        });
+      });
+    });
+
+    try {
+      const res = await fetch('/api/horarios', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(sessionsList)
+      });
+      if (res.ok) {
+        toast('Horario guardado exitosamente en la base de datos', 'success');
+        fetchAllData();
+      } else {
+        const err = await res.json();
+        toast('Error al guardar: ' + (err.error || 'Respuesta inválida'), 'error');
+      }
+    } catch (e) {
+      toast('Error de red al guardar el horario', 'error');
+    }
+  };
+
   const handleClearSchedule = () => {
-    setSchedule(null);
-    setConflicts([]);
-    toast('Horario limpiado', 'info');
+    fetch('/api/horarios', { method: 'DELETE' })
+      .then(res => {
+        if (res.ok) {
+          setSchedule(null);
+          setConflicts([]);
+          toast('Horario limpiado en la base de datos', 'info');
+        } else {
+          toast('Error al limpiar el horario', 'error');
+        }
+      })
+      .catch(() => toast('Error de red al limpiar horario', 'error'));
   };
 
   const handleDeleteCourse = (id: string) => {
-    setCourses((current) => current.filter((item) => item.id !== id));
-    setSchedule(null);
-    setConflicts([]);
-    toast('Materia eliminada', 'info');
+    fetch(`/api/cursos/${id}`, { method: 'DELETE' })
+      .then(res => {
+        if (res.ok) {
+          toast('Materia eliminada', 'info');
+          fetchAllData();
+        } else {
+          toast('Error al eliminar materia', 'error');
+        }
+      })
+      .catch(() => toast('Error de red al eliminar materia', 'error'));
   };
 
   const handleDeleteTeacher = (id: string) => {
-    setCourses((current) => current.map((course) => (course.teacherId === id ? { ...course, teacherId: '' } : course)));
-    setTeachers((current) => current.filter((item) => item.id !== id));
-    setSchedule(null);
-    setConflicts([]);
-    toast('Docente eliminado', 'info');
+    fetch(`/api/docentes/${id}`, { method: 'DELETE' })
+      .then(res => {
+        if (res.ok) {
+          toast('Docente eliminado', 'info');
+          fetchAllData();
+        } else {
+          toast('Error al eliminar docente', 'error');
+        }
+      })
+      .catch(() => toast('Error de red al eliminar docente', 'error'));
   };
 
   const handleDeleteClassroom = (id: string) => {
-    setClassrooms((current) => current.filter((item) => item.id !== id));
-    setSchedule(null);
-    setConflicts([]);
-    toast('Aula eliminada', 'info');
+    fetch(`/api/aulas/${id}`, { method: 'DELETE' })
+      .then(res => {
+        if (res.ok) {
+          toast('Aula eliminada', 'info');
+          fetchAllData();
+        } else {
+          toast('Error al eliminar aula', 'error');
+        }
+      })
+      .catch(() => toast('Error de red al eliminar aula', 'error'));
   };
 
   const handleModalSubmit = (event: FormEvent<HTMLFormElement>) => {
@@ -187,16 +383,25 @@ export default function MainMenu({ username, onLogout }: MainMenuProps) {
         return;
       }
 
-      if (editingId) {
-        setCourses((current) => current.map((item) => (item.id === editingId ? { ...item, ...data } : item)));
-        toast('Materia actualizada', 'success');
-      } else {
-        setCourses((current) => [...current, { id: createId(), ...data }]);
-        toast('Materia agregada', 'success');
-      }
+      const courseId = editingId || createId();
+      const method = editingId ? 'PUT' : 'POST';
+      const url = editingId ? `/api/cursos/${editingId}` : '/api/cursos';
 
-      setSchedule(null);
-      setConflicts([]);
+      fetch(url, {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: courseId, ...data })
+      })
+      .then(res => {
+        if (res.ok) {
+          toast(editingId ? 'Materia actualizada' : 'Materia agregada', 'success');
+          fetchAllData();
+        } else {
+          res.json().then(err => toast(err.error || 'Error al guardar la materia', 'error'));
+        }
+      })
+      .catch(() => toast('Error de red al guardar la materia', 'error'));
+
       closeModal();
       return;
     }
@@ -208,15 +413,25 @@ export default function MainMenu({ username, onLogout }: MainMenuProps) {
         return;
       }
       const availability = { ...tempAvailability };
-      if (editingId) {
-        setTeachers((current) => current.map((item) => (item.id === editingId ? { ...item, name, availability } : item)));
-        toast('Docente actualizado', 'success');
-      } else {
-        setTeachers((current) => [...current, { id: createId(), name, availability }]);
-        toast('Docente agregado', 'success');
-      }
-      setSchedule(null);
-      setConflicts([]);
+      const teacherId = editingId || createId();
+      const method = editingId ? 'PUT' : 'POST';
+      const url = editingId ? `/api/docentes/${editingId}` : '/api/docentes';
+
+      fetch(url, {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: teacherId, name, availability })
+      })
+      .then(res => {
+        if (res.ok) {
+          toast(editingId ? 'Docente actualizado' : 'Docente agregado', 'success');
+          fetchAllData();
+        } else {
+          res.json().then(err => toast(err.error || 'Error al guardar el docente', 'error'));
+        }
+      })
+      .catch(() => toast('Error de red al guardar el docente', 'error'));
+
       closeModal();
       return;
     }
@@ -231,15 +446,25 @@ export default function MainMenu({ username, onLogout }: MainMenuProps) {
         toast('El nombre del aula es obligatorio', 'warning');
         return;
       }
-      if (editingId) {
-        setClassrooms((current) => current.map((item) => (item.id === editingId ? { ...item, ...data } : item)));
-        toast('Aula actualizada', 'success');
-      } else {
-        setClassrooms((current) => [...current, { id: createId(), ...data }]);
-        toast('Aula agregada', 'success');
-      }
-      setSchedule(null);
-      setConflicts([]);
+      const classroomId = editingId || createId();
+      const method = editingId ? 'PUT' : 'POST';
+      const url = editingId ? `/api/aulas/${editingId}` : '/api/aulas';
+
+      fetch(url, {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: classroomId, ...data })
+      })
+      .then(res => {
+        if (res.ok) {
+          toast(editingId ? 'Aula actualizada' : 'Aula agregada', 'success');
+          fetchAllData();
+        } else {
+          res.json().then(err => toast(err.error || 'Error al guardar el aula', 'error'));
+        }
+      })
+      .catch(() => toast('Error de red al guardar el aula', 'error'));
+
       closeModal();
       return;
     }
@@ -492,6 +717,10 @@ export default function MainMenu({ username, onLogout }: MainMenuProps) {
                 </button>
               </div>
             </div>
+
+            <div style={{ marginTop: '2rem' }}>
+              <ExcelImport onImportSuccess={fetchAllData} />
+            </div>
           </section>
         )}
 
@@ -677,6 +906,11 @@ export default function MainMenu({ username, onLogout }: MainMenuProps) {
                 <button type="button" className={styles.secondaryButton} onClick={() => handleGenerate(true)}>
                   Regenerar
                 </button>
+                {schedule && (
+                  <button type="button" className={styles.primaryButton} onClick={handleSaveSchedule}>
+                    Guardar
+                  </button>
+                )}
                 <button type="button" className={styles.secondaryButton} onClick={handleClearSchedule}>
                   Limpiar
                 </button>

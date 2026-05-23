@@ -2,18 +2,97 @@ import { NextResponse } from 'next/server';
 import { randomUUID } from 'crypto';
 import { prisma } from '../../../lib/prisma';
 
+const DAYS = ['Lunes', 'Martes', 'Miercoles', 'Jueves', 'Viernes'];
+const SLOTS = [
+  { inicio: '07:00', fin: '09:00' },
+  { inicio: '09:00', fin: '11:00' },
+  { inicio: '11:00', fin: '13:00' },
+  { inicio: '14:00', fin: '16:00' },
+  { inicio: '16:00', fin: '18:00' }
+];
+
+export async function GET() {
+  try {
+    const horarios = await prisma.horarios.findMany({
+      include: {
+        curso: {
+          include: {
+            docente: true
+          }
+        },
+        aula: {
+          include: {
+            tipo_aula: true
+          }
+        },
+        docente: true,
+      },
+    });
+    return NextResponse.json(horarios);
+  } catch (error) {
+    console.error("Error al obtener datos:", error);
+    return NextResponse.json({ error: "Error al obtener datos" }, { status: 500 });
+  }
+}
+
+export async function DELETE() {
+  try {
+    await prisma.horarios.deleteMany();
+    return NextResponse.json({ message: 'Todos los horarios eliminados exitosamente' });
+  } catch (error: any) {
+    console.error('Error al limpiar horarios:', error);
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+}
+
 export async function POST(request: Request) {
   try {
     const datos = await request.json();
 
     if (!Array.isArray(datos)) {
-      return NextResponse.json({ error: 'Formato inválido. El cuerpo debe ser un arreglo de filas de Excel.' }, { status: 400 });
+      return NextResponse.json({ error: 'Formato inválido. Debe ser un arreglo.' }, { status: 400 });
     }
 
     if (datos.length === 0) {
-      return NextResponse.json({ message: 'No hay filas para importar.' });
+      return NextResponse.json({ message: 'No hay datos para procesar.' });
     }
 
+    // Detectar si es el formato del planificador interno (guardar horario generado)
+    const esGeneradorInterno = datos[0] && (datos[0].courseId !== undefined || datos[0].roomId !== undefined);
+
+    if (esGeneradorInterno) {
+      // Limpiar horarios existentes antes de guardar el nuevo horario generado
+      await prisma.horarios.deleteMany();
+
+      // Insertar nuevos horarios
+      const creados = [];
+      for (const sesion of datos) {
+        const { courseId, teacherId, roomId, sessionType, day, slot } = sesion;
+
+        if (courseId && roomId && teacherId && day !== undefined && slot !== undefined) {
+          const diaStr = DAYS[day] || 'Lunes';
+          const slotTime = SLOTS[slot] || SLOTS[0];
+
+          const nuevoHorario = await prisma.horarios.create({
+            data: {
+              id_horario: randomUUID(),
+              id_curso: courseId,
+              id_docente: teacherId,
+              id_aula: roomId,
+              tipo_sesion: sessionType || 'theoretical',
+              dia: diaStr,
+              horario_inicio: slotTime.inicio,
+              horario_fin: slotTime.fin,
+            }
+          });
+          creados.push(nuevoHorario);
+        }
+      }
+
+      return NextResponse.json({ message: 'Horario generado guardado exitosamente', count: creados.length });
+    }
+
+    // SI NO, se asume que es la lógica original de Importación de Excel (no la modificamos)
     const normalize = (value: any) => String(value ?? '').trim();
     const normalizeRow = (row: any) => {
       const normalized: Record<string, any> = {};
@@ -139,20 +218,5 @@ export async function POST(request: Request) {
   } catch (error: any) {
     console.error('Error al importar:', error);
     return NextResponse.json({ error: error.message }, { status: 500 });
-  }
-}
-
-export async function GET() {
-  try {
-    const horarios = await prisma.horarios.findMany({
-      include: {
-        curso: true,
-        aula: true,
-        docente: true,
-      },
-    });
-    return NextResponse.json(horarios);
-  } catch (error) {
-    return NextResponse.json({ error: "Error al obtener datos" }, { status: 500 });
   }
 }

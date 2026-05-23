@@ -1,27 +1,47 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 
+export async function GET() {
+  try {
+    const aulas = await prisma.aula.findMany({
+      include: {
+        tipo_aula: true
+      },
+      orderBy: { nom_aula: 'asc' },
+    });
+    return NextResponse.json(aulas);
+  } catch (error) {
+    console.error('Error fetching aulas:', error);
+    return NextResponse.json(
+      { error: 'Error al obtener aulas' },
+      { status: 500 }
+    );
+  }
+}
+
 export async function POST(request: Request) {
   try {
     const body = await request.json()
 
-    // Validar campos requeridos según el modelo Prisma: aula
-    const { id_aula, nom_aula, id_tipo_aula, capacidad } = body
+    // Soporte para formato de frontend e interno
+    const id_aula = body.id || body.id_aula
+    const nom_aula = body.name || body.nom_aula
+    const id_tipo_aula = body.type || body.id_tipo_aula
+    const capacidad = body.capacity !== undefined ? Number(body.capacity) : (body.capacidad !== undefined ? Number(body.capacidad) : 1)
 
-    if (!id_aula || !nom_aula || !id_tipo_aula || !capacidad) {
+    if (!id_aula || !nom_aula || !id_tipo_aula) {
       return NextResponse.json(
-        { error: 'Todos los campos son requeridos' },
+        { error: 'El ID, Nombre y Tipo de aula son requeridos' },
         { status: 400 }
       )
     }
 
-    // Crear aula en la base de datos usando Prisma
     const aula = await prisma.aula.create({
       data: {
         id_aula,
         nom_aula,
         id_tipo_aula,
-        capacidad: Number(capacidad),
+        capacidad,
       },
     })
 
@@ -35,13 +55,6 @@ export async function POST(request: Request) {
     if (error.code === 'P2002') {
       return NextResponse.json(
         { error: 'Ya existe un aula con este ID' },
-        { status: 400 }
-      )
-    }
-
-    if (error.code === 'P2003') {
-      return NextResponse.json(
-        { error: 'El tipo de aula seleccionado no es válido' },
         { status: 400 }
       )
     }

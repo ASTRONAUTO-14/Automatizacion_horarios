@@ -3,7 +3,11 @@
 import { useState } from 'react';
 import * as XLSX from 'xlsx';
 
-export default function ExcelImport() {
+interface ExcelImportProps {
+  onImportSuccess?: () => void;
+}
+
+export default function ExcelImport({ onImportSuccess }: ExcelImportProps) {
   const [rawData, setRawData] = useState<any[]>([]);
   const [previewRows, setPreviewRows] = useState<any[]>([]);
   const [previewColumns, setPreviewColumns] = useState<string[]>([]);
@@ -126,6 +130,9 @@ export default function ExcelImport() {
         setRawData([]);
         setPreviewRows([]);
         setPreviewColumns([]);
+        if (onImportSuccess) {
+          onImportSuccess();
+        }
       } else {
         const err = await res.json();
         setErrorMessage('Error al importar: ' + (err.error || 'Respuesta inválida del servidor'));

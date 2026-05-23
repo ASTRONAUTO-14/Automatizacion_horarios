@@ -38,8 +38,13 @@ model curso {
   modalidad  String     @db.VarChar
   tipo_curso String     @db.VarChar
   id_ciclo   Int
+  horas_teoricas  Int        @default(0)
+  horas_practicas Int        @default(0)
+  alumnos         Int        @default(0)
+  id_docente      String?    @db.VarChar
   carrera    carrera    @relation(fields: [id_carrera], references: [id_carrera], onDelete: NoAction, onUpdate: NoAction, map: "curso_carrera_fk")
   ciclo      ciclo      @relation(fields: [id_ciclo], references: [id_ciclo], onDelete: NoAction, onUpdate: NoAction, map: "curso_ciclo_fk")
+  docente    docente?   @relation(fields: [id_docente], references: [id_docente], onDelete: NoAction, onUpdate: NoAction, map: "curso_docente_fk")
   horarios   horarios[]
 }
 
@@ -49,7 +54,9 @@ model docente {
   nom_docente      String     @db.VarChar
   ape_docente      String     @db.VarChar
   nom_especialidad String     @db.VarChar
+  disponibilidad   Json?
   horarios         horarios[]
+  curso            curso[]
 }
 
 model facultad {
@@ -66,6 +73,7 @@ model horarios {
   dia            String  @db.VarChar
   id_aula        String  @db.VarChar
   id_docente     String  @db.VarChar
+  tipo_sesion    String  @default("theoretical") @db.VarChar
   aula           aula    @relation(fields: [id_aula], references: [id_aula], onDelete: NoAction, onUpdate: NoAction, map: "horarios_aula_fk")
   curso          curso   @relation(fields: [id_curso], references: [id_curso], onDelete: NoAction, onUpdate: NoAction, map: "horarios_curso_fk")
   docente        docente @relation(fields: [id_docente], references: [id_docente], onDelete: NoAction, onUpdate: NoAction, map: "horarios_docente_fk")
