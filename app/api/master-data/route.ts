@@ -50,7 +50,64 @@ export async function GET() {
       });
     }
 
-    const [carreras, ciclos, tiposAula] = await Promise.all([
+    // 5. Verificar y pre-poblar tipo_sesion
+    const tipoSesionCount = await prisma.tipo_sesion.count();
+    if (tipoSesionCount === 0) {
+      await prisma.tipo_sesion.createMany({
+        data: [
+          { id_tipo_sesion: 'theoretical', nom_tipo_sesion: 'Teórica' },
+          { id_tipo_sesion: 'programming', nom_tipo_sesion: 'Programación' },
+          { id_tipo_sesion: 'electronics', nom_tipo_sesion: 'Electrónica' },
+          { id_tipo_sesion: 'nursing', nom_tipo_sesion: 'Enfermería' },
+        ]
+      });
+    }
+
+    // 6. Verificar y pre-poblar dia_semana
+    const diaSemanaCount = await prisma.dia_semana.count();
+    if (diaSemanaCount === 0) {
+      await prisma.dia_semana.createMany({
+        data: [
+          { id_dia: 0, nom_dia: 'Lunes' },
+          { id_dia: 1, nom_dia: 'Martes' },
+          { id_dia: 2, nom_dia: 'Miercoles' },
+          { id_dia: 3, nom_dia: 'Jueves' },
+          { id_dia: 4, nom_dia: 'Viernes' },
+        ]
+      });
+    }
+
+    // 7. Verificar y pre-poblar bloque_horario
+    const bloqueHorarioCount = await prisma.bloque_horario.count();
+    if (bloqueHorarioCount === 0) {
+      await prisma.bloque_horario.createMany({
+        data: [
+          { id_bloque: 0, horario_inicio: '07:00', horario_fin: '09:00' },
+          { id_bloque: 1, horario_inicio: '09:00', horario_fin: '11:00' },
+          { id_bloque: 2, horario_inicio: '11:00', horario_fin: '13:00' },
+          { id_bloque: 3, horario_inicio: '14:00', horario_fin: '16:00' },
+          { id_bloque: 4, horario_inicio: '16:00', horario_fin: '18:00' },
+        ]
+      });
+    }
+
+    // 8. Verificar y pre-poblar periodo_academico
+    const periodoAcademicoCount = await prisma.periodo_academico.count();
+    if (periodoAcademicoCount === 0) {
+      await prisma.periodo_academico.create({
+        data: { id_periodo: 'Actual', nom_periodo: 'Periodo Actual', activo: true }
+      });
+    }
+
+    // 9. Verificar y pre-poblar plan_estudio
+    const planEstudioCount = await prisma.plan_estudio.count();
+    if (planEstudioCount === 0) {
+      await prisma.plan_estudio.create({
+        data: { id_plan: 'PLAN_GEN', nom_plan: 'Plan General', id_carrera: 'C01' }
+      });
+    }
+
+    const [carreras, ciclos, tiposAula, periodos, planes, tipoSesiones] = await Promise.all([
       prisma.carrera.findMany({
         orderBy: { nom_carrera: 'asc' },
       }),
@@ -60,12 +117,24 @@ export async function GET() {
       prisma.tipo_aula.findMany({
         orderBy: { nom_tipo_aula: 'asc' },
       }),
+      prisma.periodo_academico.findMany({
+        orderBy: { id_periodo: 'asc' },
+      }),
+      prisma.plan_estudio.findMany({
+        orderBy: { nom_plan: 'asc' },
+      }),
+      prisma.tipo_sesion.findMany({
+        orderBy: { nom_tipo_sesion: 'asc' },
+      }),
     ])
 
     return NextResponse.json({
       carreras,
       ciclos,
       tiposAula,
+      periodos,
+      planes,
+      tipoSesiones,
     })
   } catch (error) {
     console.error('Error fetching master data:', error)

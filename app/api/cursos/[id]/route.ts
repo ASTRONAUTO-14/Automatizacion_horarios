@@ -10,6 +10,26 @@ const mapProgramToCarreraId = (program: string): string => {
   return "C01";
 };
 
+const sanitizeTipoCurso = (type: string): string => {
+  const t = String(type ?? '').trim().toLowerCase();
+  if (['theoretical', 'programming', 'electronics', 'nursing'].includes(t)) {
+    return t;
+  }
+  if (t.includes('teoric') || t.includes('obligatorio') || t.includes('general')) {
+    return 'theoretical';
+  }
+  if (t.includes('program') || t.includes('computa')) {
+    return 'programming';
+  }
+  if (t.includes('electron')) {
+    return 'electronics';
+  }
+  if (t.includes('enferm')) {
+    return 'nursing';
+  }
+  return 'theoretical';
+};
+
 export async function PUT(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
@@ -38,25 +58,55 @@ export async function PUT(
       )
     }
 
-    const curso = await prisma.curso.update({
-      where: { id_curso: id },
-      data: {
-        creditos,
-        nom_curso,
-        id_carrera,
-        modalidad,
-        tipo_curso,
-        id_ciclo,
-        horas_teoricas,
-        horas_practicas,
-        alumnos,
-        id_docente: id_docente !== undefined ? (id_docente || null) : undefined,
-      },
-    })
+    const curso = await prisma.$transaction(async (tx) => {
+      const sanitizedTipoCurso = tipo_curso !== undefined ? sanitizeTipoCurso(tipo_curso) : undefined;
+      const c = await tx.curso.update({
+        where: { id_curso: id },
+        data: {
+          creditos,
+          nom_curso,
+          id_carrera,
+          modalidad,
+          tipo_curso: sanitizedTipoCurso,
+          id_ciclo,
+          horas_teoricas,
+          horas_practicas,
+          alumnos,
+          id_plan: body.id_plan !== undefined ? body.id_plan : undefined,
+        },
+      });
+
+      if (id_docente !== undefined) {
+        // Remove existing assignment for this course in the current period
+        await tx.asignacion.deleteMany({
+          where: {
+            id_curso: id,
+            id_periodo: 'Actual'
+          }
+        });
+
+        // Add new assignment if teacherId was specified
+        if (id_docente) {
+          await tx.asignacion.create({
+            data: {
+              id_asignacion: `${id}-Actual`,
+              id_docente,
+              id_curso: id,
+              id_periodo: 'Actual'
+            }
+          });
+        }
+      }
+
+      return c;
+    });
 
     return NextResponse.json({
       message: 'Curso actualizado exitosamente',
-      data: curso
+      data: {
+        ...curso,
+        id_docente: id_docente !== undefined ? (id_docente || null) : undefined
+      }
     })
   } catch (error: any) {
     console.error('Error al actualizar curso:', error)
@@ -74,8 +124,8 @@ export async function DELETE(
   try {
     const { id } = await params
 
-    // Eliminar horarios asociados primero
-    await prisma.horarios.deleteMany({
+    // Eliminar asignaciones del curso (esto también eliminará los horario_sesion asociados por cascade)
+    await prisma.asignacion.deleteMany({
       where: { id_curso: id }
     })
 

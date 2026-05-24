@@ -11,13 +11,63 @@ const SLOTS = [
   { inicio: '16:00', fin: '18:00' }
 ];
 
+const sanitizeTipoCurso = (type: string): string => {
+  const t = String(type ?? '').trim().toLowerCase();
+  if (['theoretical', 'programming', 'electronics', 'nursing'].includes(t)) {
+    return t;
+  }
+  if (t.includes('teoric') || t.includes('obligatorio') || t.includes('general')) {
+    return 'theoretical';
+  }
+  if (t.includes('program') || t.includes('computa')) {
+    return 'programming';
+  }
+  if (t.includes('electron')) {
+    return 'electronics';
+  }
+  if (t.includes('enferm')) {
+    return 'nursing';
+  }
+  return 'theoretical';
+};
+
+const formatDocente = (d: any) => {
+  if (!d) return null;
+  const availability: Record<number, number[]> = {
+    0: [], 1: [], 2: [], 3: [], 4: []
+  };
+  d.disponibilidad_docente?.forEach((dd: any) => {
+    if (availability[dd.id_dia]) {
+      availability[dd.id_dia].push(dd.id_bloque);
+    }
+  });
+  return {
+    id_docente: d.id_docente,
+    dni_docente: d.dni_docente,
+    nom_docente: d.nom_docente,
+    ape_docente: d.ape_docente,
+    nom_especialidad: d.nom_especialidad,
+    disponibilidad: availability
+  };
+};
+
 export async function GET() {
   try {
-    const horarios = await prisma.horarios.findMany({
+    const sessions = await prisma.horario_sesion.findMany({
       include: {
-        curso: {
+        asignacion: {
           include: {
-            docente: true
+            curso: {
+              include: {
+                carrera: true,
+                ciclo: true,
+              }
+            },
+            docente: {
+              include: {
+                disponibilidad_docente: true
+              }
+            }
           }
         },
         aula: {
@@ -25,10 +75,41 @@ export async function GET() {
             tipo_aula: true
           }
         },
-        docente: true,
-      },
+        docente: {
+          include: {
+            disponibilidad_docente: true
+          }
+        },
+        dia_semana: true,
+        bloque_horario: true,
+      }
     });
-    return NextResponse.json(horarios);
+
+    const formatted = sessions.map(s => {
+      const curso = s.asignacion?.curso;
+      const docente = formatDocente(s.docente);
+      const formattedCurso = curso ? {
+        ...curso,
+        docente: docente,
+        id_docente: docente?.id_docente || null,
+      } : null;
+
+      return {
+        id_horario: s.id_horario,
+        id_curso: s.asignacion?.id_curso || "",
+        horario_inicio: s.bloque_horario.horario_inicio,
+        horario_fin: s.bloque_horario.horario_fin,
+        dia: s.dia_semana.nom_dia,
+        id_aula: s.id_aula,
+        id_docente: s.id_docente,
+        tipo_sesion: s.tipo_sesion,
+        curso: formattedCurso,
+        aula: s.aula,
+        docente: docente,
+      };
+    });
+
+    return NextResponse.json(formatted);
   } catch (error) {
     console.error("Error al obtener datos:", error);
     return NextResponse.json({ error: "Error al obtener datos" }, { status: 500 });
@@ -37,7 +118,7 @@ export async function GET() {
 
 export async function DELETE() {
   try {
-    await prisma.horarios.deleteMany();
+    await prisma.horario_sesion.deleteMany();
     return NextResponse.json({ message: 'Todos los horarios eliminados exitosamente' });
   } catch (error: any) {
     console.error('Error al limpiar horarios:', error);
@@ -61,38 +142,62 @@ export async function POST(request: Request) {
     const esGeneradorInterno = datos[0] && (datos[0].courseId !== undefined || datos[0].roomId !== undefined);
 
     if (esGeneradorInterno) {
-      // Limpiar horarios existentes antes de guardar el nuevo horario generado
-      await prisma.horarios.deleteMany();
+      const count = await prisma.$transaction(async (tx) => {
+        // Limpiar horarios existentes
+        await tx.horario_sesion.deleteMany();
 
-      // Insertar nuevos horarios
-      const creados = [];
-      for (const sesion of datos) {
-        const { courseId, teacherId, roomId, sessionType, day, slot } = sesion;
+        let creadosCount = 0;
+        for (const sesion of datos) {
+          const { courseId, teacherId, roomId, sessionType, day, slot } = sesion;
 
-        if (courseId && roomId && teacherId && day !== undefined && slot !== undefined) {
-          const diaStr = DAYS[day] || 'Lunes';
-          const slotTime = SLOTS[slot] || SLOTS[0];
+          if (courseId && roomId && teacherId && day !== undefined && slot !== undefined) {
+            // Asegurar que exista la asignacion en periodo Actual
+            let asg = await tx.asignacion.findFirst({
+              where: {
+                id_curso: courseId,
+                id_periodo: 'Actual',
+              }
+            });
 
-          const nuevoHorario = await prisma.horarios.create({
-            data: {
-              id_horario: randomUUID(),
-              id_curso: courseId,
-              id_docente: teacherId,
-              id_aula: roomId,
-              tipo_sesion: sessionType || 'theoretical',
-              dia: diaStr,
-              horario_inicio: slotTime.inicio,
-              horario_fin: slotTime.fin,
+            if (!asg) {
+              asg = await tx.asignacion.create({
+                data: {
+                  id_asignacion: `${courseId}-Actual`,
+                  id_docente: teacherId,
+                  id_curso: courseId,
+                  id_periodo: 'Actual',
+                }
+              });
+            } else if (asg.id_docente !== teacherId) {
+              // Si cambió el docente, actualizamos la asignación
+              asg = await tx.asignacion.update({
+                where: { id_asignacion: asg.id_asignacion },
+                data: { id_docente: teacherId }
+              });
             }
-          });
-          creados.push(nuevoHorario);
-        }
-      }
 
-      return NextResponse.json({ message: 'Horario generado guardado exitosamente', count: creados.length });
+            await tx.horario_sesion.create({
+              data: {
+                id_horario: randomUUID(),
+                id_asignacion: asg.id_asignacion,
+                id_docente: teacherId,
+                id_periodo: 'Actual',
+                id_aula: roomId,
+                id_dia: day,
+                id_bloque: slot,
+                tipo_sesion: sessionType || 'theoretical',
+              }
+            });
+            creadosCount++;
+          }
+        }
+        return creadosCount;
+      });
+
+      return NextResponse.json({ message: 'Horario generado guardado exitosamente', count });
     }
 
-    // SI NO, se asume que es la lógica original de Importación de Excel (no la modificamos)
+    // SI NO, se asume que es la lógica original de Importación de Excel (adaptada al nuevo schema)
     const normalize = (value: any) => String(value ?? '').trim();
     const normalizeRow = (row: any) => {
       const normalized: Record<string, any> = {};
@@ -111,6 +216,7 @@ export async function POST(request: Request) {
       return '';
     };
 
+    // Pre-requisito: asegurar entidades base antes de importar
     await prisma.facultad.upsert({
       where: { id_facultad: 'F01' },
       update: {},
@@ -135,6 +241,15 @@ export async function POST(request: Request) {
       create: { id_tipo_aula: 'T1', nom_tipo_aula: 'General' },
     });
 
+    await prisma.periodo_academico.upsert({
+      where: { id_periodo: 'Actual' },
+      update: {},
+      create: { id_periodo: 'Actual', nom_periodo: 'Periodo Actual', activo: true }
+    });
+
+    // Limpiar horarios anteriores para evitar conflictos en la nueva importación
+    await prisma.horario_sesion.deleteMany();
+
     for (const [index, filaRaw] of datos.entries()) {
       const fila = normalizeRow(filaRaw);
       const idCurso = normalize(pick(fila, 'id_curso', 'curso')) || `curso-${index + 1}`;
@@ -143,7 +258,7 @@ export async function POST(request: Request) {
       const aulaName = normalize(pick(fila, 'nom_aula', 'aula', 'AULA', 'Aula')) || idAula;
       const idDocente = normalize(pick(fila, 'id_docente', 'docente', 'DOCENTE', 'Docente')) || `DOC-${index + 1}`;
       const docenteName = normalize(pick(fila, 'nom_docente', 'docente', 'DOCENTE', 'Docente')) || idDocente;
-      const dia = normalize(pick(fila, 'dia', 'DÍA', 'Dia', 'DIA')) || 'Día no definido';
+      const dia = normalize(pick(fila, 'dia', 'DÍA', 'Dia', 'DIA')) || 'Lunes';
       const horario_inicio_raw = pick(fila, 'horario_inicio', 'INICIO', 'inicio');
       const horario_fin_raw = pick(fila, 'horario_fin', 'FIN', 'fin');
 
@@ -161,9 +276,10 @@ export async function POST(request: Request) {
         return normalized;
       };
 
-      const horario_inicio = parseTimeValue(horario_inicio_raw);
-      const horario_fin = parseTimeValue(horario_fin_raw);
+      const horario_inicio = parseTimeValue(horario_inicio_raw) || '07:00';
+      const horario_fin = parseTimeValue(horario_fin_raw) || '09:00';
 
+      // Upsert curso
       await prisma.curso.upsert({
         where: { id_curso: idCurso },
         update: { nom_curso: cursoName },
@@ -173,11 +289,12 @@ export async function POST(request: Request) {
           creditos: 1,
           id_carrera: 'C01',
           modalidad: 'Presencial',
-          tipo_curso: 'Obligatorio',
+          tipo_curso: 'theoretical',
           id_ciclo: 1,
         },
       });
 
+      // Upsert aula
       await prisma.aula.upsert({
         where: { id_aula: idAula },
         update: { nom_aula: aulaName },
@@ -189,6 +306,7 @@ export async function POST(request: Request) {
         },
       });
 
+      // Upsert docente
       await prisma.docente.upsert({
         where: { id_docente: idDocente },
         update: { nom_docente: docenteName },
@@ -201,15 +319,49 @@ export async function POST(request: Request) {
         },
       });
 
-      await prisma.horarios.create({
+      // Asegurar asignación docente-curso
+      let asg = await prisma.asignacion.findUnique({
+        where: {
+          id_docente_id_curso_id_periodo: {
+            id_docente: idDocente,
+            id_curso: idCurso,
+            id_periodo: 'Actual',
+          }
+        }
+      });
+
+      if (!asg) {
+        asg = await prisma.asignacion.create({
+          data: {
+            id_asignacion: `${idCurso}-Actual`,
+            id_docente: idDocente,
+            id_curso: idCurso,
+            id_periodo: 'Actual',
+          }
+        });
+      }
+
+      // Mapear Dia y Bloque Horario
+      const diaIndex = DAYS.indexOf(dia);
+      const id_dia = diaIndex !== -1 ? diaIndex : 0;
+
+      let id_bloque = 0;
+      const slotIndex = SLOTS.findIndex(s => s.inicio === horario_inicio || s.fin === horario_fin);
+      if (slotIndex !== -1) {
+        id_bloque = slotIndex;
+      }
+
+      // Crear sesión de horario
+      await prisma.horario_sesion.create({
         data: {
           id_horario: randomUUID(),
-          dia,
-          horario_inicio,
-          horario_fin,
-          id_curso: idCurso,
-          id_aula: idAula,
+          id_asignacion: asg.id_asignacion,
           id_docente: idDocente,
+          id_periodo: 'Actual',
+          id_aula: idAula,
+          id_dia: id_dia,
+          id_bloque: id_bloque,
+          tipo_sesion: 'theoretical',
         },
       });
     }

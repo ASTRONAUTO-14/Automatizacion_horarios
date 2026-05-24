@@ -10,17 +10,90 @@ const mapProgramToCarreraId = (program: string): string => {
   return "C01";
 };
 
+const sanitizeTipoCurso = (type: string): string => {
+  const t = String(type ?? '').trim().toLowerCase();
+  if (['theoretical', 'programming', 'electronics', 'nursing'].includes(t)) {
+    return t;
+  }
+  if (t.includes('teoric') || t.includes('obligatorio') || t.includes('general')) {
+    return 'theoretical';
+  }
+  if (t.includes('program') || t.includes('computa')) {
+    return 'programming';
+  }
+  if (t.includes('electron')) {
+    return 'electronics';
+  }
+  if (t.includes('enferm')) {
+    return 'nursing';
+  }
+  return 'theoretical';
+};
+
 export async function GET() {
   try {
     const cursos = await prisma.curso.findMany({
       include: {
-        docente: true,
         carrera: true,
         ciclo: true,
+        plan: true,
+        asignacion: {
+          where: { id_periodo: 'Actual' },
+          include: {
+            docente: {
+              include: {
+                disponibilidad_docente: true
+              }
+            }
+          }
+        }
       },
       orderBy: { nom_curso: 'asc' },
     });
-    return NextResponse.json(cursos);
+
+    const formattedCursos = cursos.map(c => {
+      const mainAsg = c.asignacion[0];
+      let formattedDocente = null;
+      if (mainAsg?.docente) {
+        const availability: Record<number, number[]> = {
+          0: [], 1: [], 2: [], 3: [], 4: []
+        };
+        mainAsg.docente.disponibilidad_docente.forEach(dd => {
+          if (availability[dd.id_dia]) {
+            availability[dd.id_dia].push(dd.id_bloque);
+          }
+        });
+        formattedDocente = {
+          id_docente: mainAsg.docente.id_docente,
+          dni_docente: mainAsg.docente.dni_docente,
+          nom_docente: mainAsg.docente.nom_docente,
+          ape_docente: mainAsg.docente.ape_docente,
+          nom_especialidad: mainAsg.docente.nom_especialidad,
+          disponibilidad: availability
+        };
+      }
+
+      return {
+        id_curso: c.id_curso,
+        creditos: c.creditos,
+        nom_curso: c.nom_curso,
+        id_carrera: c.id_carrera,
+        modalidad: c.modalidad,
+        tipo_curso: c.tipo_curso,
+        id_ciclo: c.id_ciclo,
+        horas_teoricas: c.horas_teoricas,
+        horas_practicas: c.horas_practicas,
+        alumnos: c.alumnos,
+        id_plan: c.id_plan,
+        carrera: c.carrera,
+        ciclo: c.ciclo,
+        plan: c.plan,
+        id_docente: formattedDocente?.id_docente || null,
+        docente: formattedDocente,
+      };
+    });
+
+    return NextResponse.json(formattedCursos);
   } catch (error) {
     console.error('Error fetching cursos:', error);
     return NextResponse.json(
@@ -55,25 +128,45 @@ export async function POST(request: Request) {
       )
     }
 
-    const curso = await prisma.curso.create({
-      data: {
-        id_curso,
-        creditos,
-        nom_curso,
-        id_carrera,
-        modalidad,
-        tipo_curso,
-        id_ciclo,
-        horas_teoricas,
-        horas_practicas,
-        alumnos,
-        id_docente: id_docente || null,
-      },
-    })
+    const sanitizedTipoCurso = sanitizeTipoCurso(tipo_curso);
+
+    const curso = await prisma.$transaction(async (tx) => {
+      const c = await tx.curso.create({
+        data: {
+          id_curso,
+          creditos,
+          nom_curso,
+          id_carrera,
+          modalidad,
+          tipo_curso: sanitizedTipoCurso,
+          id_ciclo,
+          horas_teoricas,
+          horas_practicas,
+          alumnos,
+          id_plan: body.id_plan || 'PLAN_GEN',
+        },
+      });
+
+      if (id_docente) {
+        await tx.asignacion.create({
+          data: {
+            id_asignacion: `${id_curso}-Actual`,
+            id_docente,
+            id_curso,
+            id_periodo: 'Actual',
+          }
+        });
+      }
+
+      return c;
+    });
 
     return NextResponse.json({ 
       message: 'Curso registrado exitosamente', 
-      data: curso 
+      data: {
+        ...curso,
+        id_docente: id_docente || null
+      }
     })
   } catch (error: any) {
     console.error('Error al registrar curso:', error)

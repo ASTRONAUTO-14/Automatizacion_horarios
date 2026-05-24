@@ -24,20 +24,53 @@ export async function PUT(
       )
     }
 
-    const docente = await prisma.docente.update({
-      where: { id_docente: id },
-      data: {
-        dni_docente,
-        nom_docente,
-        ape_docente,
-        nom_especialidad,
-        disponibilidad: disponibilidad !== undefined ? (disponibilidad || null) : undefined,
-      },
-    })
+    const docente = await prisma.$transaction(async (tx) => {
+      const d = await tx.docente.update({
+        where: { id_docente: id },
+        data: {
+          dni_docente,
+          nom_docente,
+          ape_docente,
+          nom_especialidad,
+        },
+      });
+
+      if (disponibilidad !== undefined) {
+        await tx.disponibilidad_docente.deleteMany({
+          where: { id_docente: id }
+        });
+
+        if (disponibilidad && typeof disponibilidad === 'object') {
+          const records = [];
+          for (const [diaStr, bloques] of Object.entries(disponibilidad)) {
+            const dia = parseInt(diaStr);
+            if (!isNaN(dia) && Array.isArray(bloques)) {
+              for (const bloque of bloques) {
+                records.push({
+                  id_disponibilidad: `${id}-${dia}-${bloque}`,
+                  id_docente: id,
+                  id_dia: dia,
+                  id_bloque: bloque,
+                });
+              }
+            }
+          }
+          if (records.length > 0) {
+            await tx.disponibilidad_docente.createMany({
+              data: records
+            });
+          }
+        }
+      }
+      return d;
+    });
 
     return NextResponse.json({
       message: 'Docente actualizado exitosamente',
-      data: docente
+      data: {
+        ...docente,
+        disponibilidad
+      }
     })
   } catch (error: any) {
     console.error('Error al actualizar docente:', error)
@@ -55,18 +88,7 @@ export async function DELETE(
   try {
     const { id } = await params
 
-    // Desasociar de los cursos
-    await prisma.curso.updateMany({
-      where: { id_docente: id },
-      data: { id_docente: null }
-    })
-
-    // Eliminar horarios asociados
-    await prisma.horarios.deleteMany({
-      where: { id_docente: id }
-    })
-
-    // Eliminar docente
+    // Eliminar docente - Cascade eliminará sus disponibilidades, asignaciones e intereses de horario automaticamente
     await prisma.docente.delete({
       where: { id_docente: id },
     })

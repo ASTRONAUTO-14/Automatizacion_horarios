@@ -4,9 +4,32 @@ import { prisma } from '@/lib/prisma'
 export async function GET() {
   try {
     const docentes = await prisma.docente.findMany({
+      include: {
+        disponibilidad_docente: true,
+      },
       orderBy: { nom_docente: 'asc' },
     });
-    return NextResponse.json(docentes);
+
+    const formattedDocentes = docentes.map(d => {
+      const availability: Record<number, number[]> = {
+        0: [], 1: [], 2: [], 3: [], 4: []
+      };
+      d.disponibilidad_docente.forEach(dd => {
+        if (availability[dd.id_dia]) {
+          availability[dd.id_dia].push(dd.id_bloque);
+        }
+      });
+      return {
+        id_docente: d.id_docente,
+        dni_docente: d.dni_docente,
+        nom_docente: d.nom_docente,
+        ape_docente: d.ape_docente,
+        nom_especialidad: d.nom_especialidad,
+        disponibilidad: availability
+      };
+    });
+
+    return NextResponse.json(formattedDocentes);
   } catch (error) {
     console.error('Error fetching docentes:', error);
     return NextResponse.json(
@@ -37,21 +60,49 @@ export async function POST(request: Request) {
       )
     }
 
-    // Crear docente en la base de datos usando Prisma
-    const docente = await prisma.docente.create({
-      data: {
-        id_docente,
-        dni_docente,
-        nom_docente,
-        ape_docente,
-        nom_especialidad,
-        disponibilidad: disponibilidad || null,
-      },
-    })
+    // Crear docente y su disponibilidad en una transaccion
+    const docente = await prisma.$transaction(async (tx) => {
+      const d = await tx.docente.create({
+        data: {
+          id_docente,
+          dni_docente,
+          nom_docente,
+          ape_docente,
+          nom_especialidad,
+        },
+      });
+
+      if (disponibilidad && typeof disponibilidad === 'object') {
+        const records = [];
+        for (const [diaStr, bloques] of Object.entries(disponibilidad)) {
+          const dia = parseInt(diaStr);
+          if (!isNaN(dia) && Array.isArray(bloques)) {
+            for (const bloque of bloques) {
+              records.push({
+                id_disponibilidad: `${id_docente}-${dia}-${bloque}`,
+                id_docente,
+                id_dia: dia,
+                id_bloque: bloque,
+              });
+            }
+          }
+        }
+        if (records.length > 0) {
+          await tx.disponibilidad_docente.createMany({
+            data: records
+          });
+        }
+      }
+
+      return d;
+    });
 
     return NextResponse.json({ 
       message: 'Docente registrado exitosamente', 
-      data: docente 
+      data: {
+        ...docente,
+        disponibilidad
+      }
     })
   } catch (error: any) {
     console.error('Error al registrar docente:', error)

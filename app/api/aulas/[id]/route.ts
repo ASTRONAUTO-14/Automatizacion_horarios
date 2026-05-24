@@ -51,7 +51,7 @@ export async function DELETE(
     const { id } = await params
 
     // Eliminar horarios asociados primero
-    await prisma.horarios.deleteMany({
+    await prisma.horario_sesion.deleteMany({
       where: { id_aula: id }
     })
 
