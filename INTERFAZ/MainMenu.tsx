@@ -33,11 +33,11 @@ function getSessionVariantClass(type?: string) {
 }
 
 interface MainMenuProps {
-  username: string;
+  user: { id: string; name: string };
   onLogout: () => void;
 }
 
-export default function MainMenu({ username, onLogout }: MainMenuProps) {
+export default function MainMenu({ user, onLogout }: MainMenuProps) {
   const [activeTab, setActiveTab] = useState<AppTab>('dashboard');
   const [courses, setCourses] = useState<Course[]>([]);
   const [teachers, setTeachers] = useState<Teacher[]>([]);
@@ -56,10 +56,10 @@ export default function MainMenu({ username, onLogout }: MainMenuProps) {
   const fetchAllData = async () => {
     try {
       const [resCursos, resDocentes, resAulas, resHorarios] = await Promise.all([
-        fetch('/api/cursos'),
-        fetch('/api/docentes'),
-        fetch('/api/aulas'),
-        fetch('/api/horarios'),
+        fetch(`/api/cursos?userId=${user.id}`),
+        fetch(`/api/docentes?userId=${user.id}`),
+        fetch(`/api/aulas?userId=${user.id}`),
+        fetch(`/api/horarios?userId=${user.id}`),
       ]);
 
       const dataCursos = await resCursos.json();
@@ -194,54 +194,15 @@ export default function MainMenu({ username, onLogout }: MainMenuProps) {
     setTempAvailability(emptyAvail);
   };
 
-  const handleLoadSample = () => {
-    toast('Cargando datos de demostración...', 'info');
-    fetch('/api/horarios', { method: 'DELETE' })
-      .then(() => {
-        const pTeachers = sampleTeachers().map(t => 
-          fetch('/api/docentes', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(t)
-          })
-        );
-        const pClassrooms = sampleClassrooms().map(r => 
-          fetch('/api/aulas', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(r)
-          })
-        );
-        return Promise.all([...pTeachers, ...pClassrooms]);
-      })
-      .then(() => {
-        const pCourses = sampleCourses().map(c => 
-          fetch('/api/cursos', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(c)
-          })
-        );
-        return Promise.all(pCourses);
-      })
-      .then(() => {
-        toast('Datos de demostración cargados en base de datos', 'success');
-        fetchAllData();
-      })
-      .catch(e => {
-        console.error(e);
-        toast('Error al cargar datos de demostración', 'error');
-      });
-  };
 
   const handleResetAll = () => {
     if (!confirm('¿Estás seguro de reiniciar todos los datos? Se borrará todo en la base de datos.')) return;
     toast('Reiniciando base de datos...', 'info');
-    fetch('/api/horarios', { method: 'DELETE' })
+    fetch(`/api/horarios?userId=${user.id}`, { method: 'DELETE' })
       .then(() => Promise.all([
-        fetch('/api/cursos').then(res => res.json()).then(data => Promise.all(data.map((c: any) => fetch(`/api/cursos/${c.id_curso}`, { method: 'DELETE' })))),
-        fetch('/api/docentes').then(res => res.json()).then(data => Promise.all(data.map((t: any) => fetch(`/api/docentes/${t.id_docente}`, { method: 'DELETE' })))),
-        fetch('/api/aulas').then(res => res.json()).then(data => Promise.all(data.map((r: any) => fetch(`/api/aulas/${r.id_aula}`, { method: 'DELETE' }))))
+        fetch(`/api/cursos?userId=${user.id}`).then(res => res.json()).then(data => Promise.all(data.map((c: any) => fetch(`/api/cursos/${c.id_curso}?userId=${user.id}`, { method: 'DELETE' })))),
+        fetch(`/api/docentes?userId=${user.id}`).then(res => res.json()).then(data => Promise.all(data.map((t: any) => fetch(`/api/docentes/${t.id_docente}?userId=${user.id}`, { method: 'DELETE' })))),
+        fetch(`/api/aulas?userId=${user.id}`).then(res => res.json()).then(data => Promise.all(data.map((r: any) => fetch(`/api/aulas/${r.id_aula}?userId=${user.id}`, { method: 'DELETE' }))))
       ]))
       .then(() => {
         toast('Todos los datos han sido reiniciados', 'info');
@@ -282,7 +243,8 @@ export default function MainMenu({ username, onLogout }: MainMenuProps) {
           roomId: session.roomId,
           sessionType: session.sessionType,
           day: dayIndex,
-          slot: slotIndex
+          slot: slotIndex,
+          userId: user.id
         });
       });
     });
@@ -306,7 +268,7 @@ export default function MainMenu({ username, onLogout }: MainMenuProps) {
   };
 
   const handleClearSchedule = () => {
-    fetch('/api/horarios', { method: 'DELETE' })
+    fetch(`/api/horarios?userId=${user.id}`, { method: 'DELETE' })
       .then(res => {
         if (res.ok) {
           setSchedule(null);
@@ -320,7 +282,7 @@ export default function MainMenu({ username, onLogout }: MainMenuProps) {
   };
 
   const handleDeleteCourse = (id: string) => {
-    fetch(`/api/cursos/${id}`, { method: 'DELETE' })
+    fetch(`/api/cursos/${id}?userId=${user.id}`, { method: 'DELETE' })
       .then(res => {
         if (res.ok) {
           toast('Materia eliminada', 'info');
@@ -333,7 +295,7 @@ export default function MainMenu({ username, onLogout }: MainMenuProps) {
   };
 
   const handleDeleteTeacher = (id: string) => {
-    fetch(`/api/docentes/${id}`, { method: 'DELETE' })
+    fetch(`/api/docentes/${id}?userId=${user.id}`, { method: 'DELETE' })
       .then(res => {
         if (res.ok) {
           toast('Docente eliminado', 'info');
@@ -346,7 +308,7 @@ export default function MainMenu({ username, onLogout }: MainMenuProps) {
   };
 
   const handleDeleteClassroom = (id: string) => {
-    fetch(`/api/aulas/${id}`, { method: 'DELETE' })
+    fetch(`/api/aulas/${id}?userId=${user.id}`, { method: 'DELETE' })
       .then(res => {
         if (res.ok) {
           toast('Aula eliminada', 'info');
@@ -391,7 +353,7 @@ export default function MainMenu({ username, onLogout }: MainMenuProps) {
       fetch(url, {
         method,
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: courseId, ...data })
+        body: JSON.stringify({ id: courseId, userId: user.id, ...data })
       })
       .then(res => {
         if (res.ok) {
@@ -421,7 +383,7 @@ export default function MainMenu({ username, onLogout }: MainMenuProps) {
       fetch(url, {
         method,
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: teacherId, name, availability })
+        body: JSON.stringify({ id: teacherId, userId: user.id, name, availability })
       })
       .then(res => {
         if (res.ok) {
@@ -454,7 +416,7 @@ export default function MainMenu({ username, onLogout }: MainMenuProps) {
       fetch(url, {
         method,
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: classroomId, ...data })
+        body: JSON.stringify({ id: classroomId, userId: user.id, ...data })
       })
       .then(res => {
         if (res.ok) {
@@ -636,7 +598,7 @@ export default function MainMenu({ username, onLogout }: MainMenuProps) {
       {showWelcome && (
         <section className={styles.welcomeBanner}>
           <div className={styles.bannerContent}>
-            <p className={styles.bannerText}>✨ Hola, {username.split(' ')[0]} — tu panel está listo.</p>
+            <p className={styles.bannerText}>✨ Hola, {user.name.split(' ')[0]} — tu panel está listo.</p>
             <button type="button" className={styles.bannerClose} onClick={() => setShowWelcome(false)}>
               Cerrar
             </button>
@@ -651,12 +613,9 @@ export default function MainMenu({ username, onLogout }: MainMenuProps) {
         </div>
         <div className={styles.headerActions}>
           <div className={styles.userBadge}>
-            <span className={styles.userAvatar}>{username.split(' ').map((part) => part[0]).join('').slice(0, 2).toUpperCase()}</span>
-            <span>{username}</span>
+            <span className={styles.userAvatar}>{user.name.split(' ').map((part) => part[0]).join('').slice(0, 2).toUpperCase()}</span>
+            <span>{user.name}</span>
           </div>
-          <button type="button" className={styles.headerButton} onClick={handleLoadSample}>
-            Cargar Demo
-          </button>
           <button type="button" className={styles.dangerButton} onClick={handleResetAll}>
             Reiniciar
           </button>
@@ -702,7 +661,7 @@ export default function MainMenu({ username, onLogout }: MainMenuProps) {
             
             {showExcelImport && (
               <div className={styles.excelWrapper}>
-                <ExcelImport onImportSuccess={fetchAllData} />
+                <ExcelImport userId={user.id} onImportSuccess={fetchAllData} />
               </div>
             )}
             

@@ -1,9 +1,13 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
+    const { searchParams } = new URL(request.url);
+    const userId = searchParams.get('userId');
+
     const docentes = await prisma.docente.findMany({
+      where: userId ? { id_usuario: userId } : {},
       include: {
         disponibilidad_docente: true,
       },
@@ -52,6 +56,7 @@ export async function POST(request: Request) {
     const dni_docente = body.dni_docente || '00000000'
     const nom_especialidad = body.nom_especialidad || 'General'
     const disponibilidad = body.availability !== undefined ? body.availability : body.disponibilidad
+    const id_usuario = body.userId
 
     if (!id_docente || !nom_docente) {
       return NextResponse.json(
@@ -69,6 +74,7 @@ export async function POST(request: Request) {
           nom_docente,
           ape_docente,
           nom_especialidad,
+          id_usuario,
         },
       });
 

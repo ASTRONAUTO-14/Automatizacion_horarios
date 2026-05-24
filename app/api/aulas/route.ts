@@ -1,9 +1,13 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
+    const { searchParams } = new URL(request.url);
+    const userId = searchParams.get('userId');
+
     const aulas = await prisma.aula.findMany({
+      where: userId ? { id_usuario: userId } : {},
       include: {
         tipo_aula: true
       },
@@ -28,6 +32,7 @@ export async function POST(request: Request) {
     const nom_aula = body.name || body.nom_aula
     const id_tipo_aula = body.type || body.id_tipo_aula
     const capacidad = body.capacity !== undefined ? Number(body.capacity) : (body.capacidad !== undefined ? Number(body.capacidad) : 1)
+    const id_usuario = body.userId
 
     if (!id_aula || !nom_aula || !id_tipo_aula) {
       return NextResponse.json(
@@ -42,6 +47,7 @@ export async function POST(request: Request) {
         nom_aula,
         id_tipo_aula,
         capacidad,
+        id_usuario,
       },
     })
 

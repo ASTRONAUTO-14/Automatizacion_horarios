@@ -4,10 +4,11 @@ import { useState } from 'react';
 import * as XLSX from 'xlsx';
 
 interface ExcelImportProps {
+  userId: string;
   onImportSuccess?: () => void;
 }
 
-export default function ExcelImport({ onImportSuccess }: ExcelImportProps) {
+export default function ExcelImport({ userId, onImportSuccess }: ExcelImportProps) {
   const [rawData, setRawData] = useState<any[]>([]);
   const [previewRows, setPreviewRows] = useState<any[]>([]);
   const [previewColumns, setPreviewColumns] = useState<string[]>([]);
@@ -121,7 +122,7 @@ export default function ExcelImport({ onImportSuccess }: ExcelImportProps) {
       const res = await fetch('/api/horarios', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(rawData),
+        body: JSON.stringify(rawData.map(row => ({ ...row, userId }))),
       });
 
       if (res.ok) {

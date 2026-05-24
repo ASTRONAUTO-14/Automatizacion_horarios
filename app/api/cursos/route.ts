@@ -30,9 +30,13 @@ const sanitizeTipoCurso = (type: string): string => {
   return 'theoretical';
 };
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
+    const { searchParams } = new URL(request.url);
+    const userId = searchParams.get('userId');
+
     const cursos = await prisma.curso.findMany({
+      where: userId ? { id_usuario: userId } : {},
       include: {
         carrera: true,
         ciclo: true,
@@ -118,6 +122,7 @@ export async function POST(request: Request) {
     const horas_practicas = body.practicalHours !== undefined ? Number(body.practicalHours) : 0
     const alumnos = body.students !== undefined ? Number(body.students) : 0
     const id_docente = body.teacherId !== undefined ? body.teacherId : body.id_docente
+    const id_usuario = body.userId
 
     const id_carrera = body.id_carrera || mapProgramToCarreraId(body.program || '')
 
@@ -144,6 +149,7 @@ export async function POST(request: Request) {
           horas_practicas,
           alumnos,
           id_plan: body.id_plan || 'PLAN_GEN',
+          id_usuario,
         },
       });
 

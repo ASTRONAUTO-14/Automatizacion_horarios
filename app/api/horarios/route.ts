@@ -51,9 +51,13 @@ const formatDocente = (d: any) => {
   };
 };
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
+    const { searchParams } = new URL(request.url);
+    const userId = searchParams.get('userId');
+
     const sessions = await prisma.horario_sesion.findMany({
+      where: userId ? { id_usuario: userId } : {},
       include: {
         asignacion: {
           include: {
@@ -116,9 +120,16 @@ export async function GET() {
   }
 }
 
-export async function DELETE() {
+export async function DELETE(request: Request) {
   try {
-    await prisma.horario_sesion.deleteMany();
+    const { searchParams } = new URL(request.url);
+    const userId = searchParams.get('userId');
+
+    if (userId) {
+      await prisma.horario_sesion.deleteMany({ where: { id_usuario: userId } });
+    } else {
+      await prisma.horario_sesion.deleteMany();
+    }
     return NextResponse.json({ message: 'Todos los horarios eliminados exitosamente' });
   } catch (error: any) {
     console.error('Error al limpiar horarios:', error);
@@ -143,12 +154,16 @@ export async function POST(request: Request) {
 
     if (esGeneradorInterno) {
       const count = await prisma.$transaction(async (tx) => {
-        // Limpiar horarios existentes
-        await tx.horario_sesion.deleteMany();
+        const firstUserId = datos[0].userId;
+        if (firstUserId) {
+          await tx.horario_sesion.deleteMany({ where: { id_usuario: firstUserId } });
+        } else {
+          await tx.horario_sesion.deleteMany();
+        }
 
         let creadosCount = 0;
         for (const sesion of datos) {
-          const { courseId, teacherId, roomId, sessionType, day, slot } = sesion;
+          const { courseId, teacherId, roomId, sessionType, day, slot, userId } = sesion;
 
           if (courseId && roomId && teacherId && day !== undefined && slot !== undefined) {
             // Asegurar que exista la asignacion en periodo Actual
@@ -186,6 +201,7 @@ export async function POST(request: Request) {
                 id_dia: day,
                 id_bloque: slot,
                 tipo_sesion: sessionType || 'theoretical',
+                id_usuario: userId,
               }
             });
             creadosCount++;
@@ -248,10 +264,16 @@ export async function POST(request: Request) {
     });
 
     // Limpiar horarios anteriores para evitar conflictos en la nueva importación
-    await prisma.horario_sesion.deleteMany();
+    const firstUserId = datos[0]?.userId;
+    if (firstUserId) {
+      await prisma.horario_sesion.deleteMany({ where: { id_usuario: firstUserId } });
+    } else {
+      await prisma.horario_sesion.deleteMany();
+    }
 
     for (const [index, filaRaw] of datos.entries()) {
       const fila = normalizeRow(filaRaw);
+      const userId = filaRaw.userId;
       const idCurso = normalize(pick(fila, 'id_curso', 'curso')) || `curso-${index + 1}`;
       const cursoName = normalize(pick(fila, 'nom_curso', 'curso', 'CURSO', 'Curso')) || idCurso;
       const idAula = normalize(pick(fila, 'id_aula', 'aula', 'AULA', 'Aula')) || `AULA-${index + 1}`;
@@ -291,6 +313,7 @@ export async function POST(request: Request) {
           modalidad: 'Presencial',
           tipo_curso: 'theoretical',
           id_ciclo: 1,
+          id_usuario: userId,
         },
       });
 
@@ -303,6 +326,7 @@ export async function POST(request: Request) {
           nom_aula: aulaName,
           id_tipo_aula: 'T1',
           capacidad: 30,
+          id_usuario: userId,
         },
       });
 
@@ -316,6 +340,7 @@ export async function POST(request: Request) {
           nom_docente: docenteName,
           ape_docente: 'Desconocido',
           nom_especialidad: 'General',
+          id_usuario: userId,
         },
       });
 
@@ -362,6 +387,7 @@ export async function POST(request: Request) {
           id_dia: id_dia,
           id_bloque: id_bloque,
           tipo_sesion: 'theoretical',
+          id_usuario: userId,
         },
       });
     }
