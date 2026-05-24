@@ -51,6 +51,7 @@ export default function MainMenu({ username, onLogout }: MainMenuProps) {
   const [tempAvailability, setTempAvailability] = useState<Record<number, number[]>>(emptyAvail);
   const [toastMessages, setToastMessages] = useState<ToastMessage[]>([]);
   const [showWelcome, setShowWelcome] = useState(true);
+  const [showExcelImport, setShowExcelImport] = useState(false);
 
   const fetchAllData = async () => {
     try {
@@ -681,7 +682,31 @@ export default function MainMenu({ username, onLogout }: MainMenuProps) {
       <main className={styles.mainContent}>
         {activeTab === 'dashboard' && (
           <section className={styles.dashboardSection}>
-            <div className={styles.statsGrid}>
+            <div className={styles.heroGrid}>
+               <button className={styles.bigHeroButton} onClick={() => setShowExcelImport(!showExcelImport)}>
+                  <div className={styles.heroIcon}>📊</div>
+                  <h3>Importar Excel</h3>
+                  <p>Sube tus datos masivamente.</p>
+               </button>
+               <button className={styles.bigHeroButton} onClick={() => setActiveTab('courses')}>
+                  <div className={styles.heroIcon}>✍️</div>
+                  <h3>Agregar Manualmente</h3>
+                  <p>Usa formularios de texto.</p>
+               </button>
+               <button className={styles.bigHeroButton} onClick={() => setActiveTab('schedule')}>
+                  <div className={styles.heroIcon}>📅</div>
+                  <h3>Ver Horarios</h3>
+                  <p>Consulta horarios ya generados.</p>
+               </button>
+            </div>
+            
+            {showExcelImport && (
+              <div className={styles.excelWrapper}>
+                <ExcelImport onImportSuccess={fetchAllData} />
+              </div>
+            )}
+            
+            <div className={styles.statsGrid} style={{ marginTop: '2rem' }}>
               <div className={styles.statCard}>
                 <div className={styles.statHead}>Materias</div>
                 <div className={styles.statValue}>{courses.length}</div>
@@ -702,24 +727,6 @@ export default function MainMenu({ username, onLogout }: MainMenuProps) {
                 <div className={styles.statValue}>{totalSessions}</div>
                 <div className={styles.statCaption}>{theorySessions} teoría / {practiceSessions} práctica</div>
               </div>
-            </div>
-            <div className={styles.actionCard}>
-              <h2>Acciones Rápidas</h2>
-              <div className={styles.buttonGroup}>
-                <button type="button" className={styles.primaryButton} onClick={() => handleGenerate(false)}>
-                  Generar Horario
-                </button>
-                <button type="button" className={styles.secondaryButton} onClick={handleLoadSample}>
-                  Cargar Datos Demo
-                </button>
-                <button type="button" className={styles.secondaryButton} onClick={() => setActiveTab('schedule')} disabled={!schedule}>
-                  Ver Horario
-                </button>
-              </div>
-            </div>
-
-            <div style={{ marginTop: '2rem' }}>
-              <ExcelImport onImportSuccess={fetchAllData} />
             </div>
           </section>
         )}

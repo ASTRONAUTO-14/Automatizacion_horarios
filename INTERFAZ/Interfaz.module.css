@@ -281,9 +281,9 @@
 }
 
 .appWrapper {
-  max-width: 1200px;
+  width: 100%;
   margin: 0 auto;
-  padding: 20px 0;
+  padding: 20px 32px;
 }
 
 .welcomeBanner {
@@ -515,6 +515,72 @@
 .modalSubmit:hover,
 .toastClose:hover {
   transform: translateY(-1px);
+}
+
+.heroGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 24px;
+  margin-bottom: 2rem;
+}
+
+.bigHeroButton {
+  background: white;
+  border: 2px solid rgba(6, 95, 70, 0.1);
+  border-radius: 24px;
+  padding: 32px 24px;
+  text-align: center;
+  cursor: pointer;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.02);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
+
+.bigHeroButton:hover {
+  transform: translateY(-4px);
+  border-color: #059669;
+  box-shadow: 0 20px 40px rgba(5, 150, 105, 0.1);
+}
+
+.heroIcon {
+  font-size: 3rem;
+  background: #ecfdf5;
+  width: 80px;
+  height: 80px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  margin-bottom: 8px;
+}
+
+.bigHeroButton h3 {
+  margin: 0;
+  font-size: 1.4rem;
+  color: #064e3b;
+}
+
+.bigHeroButton p {
+  margin: 0;
+  color: #64748b;
+  font-size: 1rem;
+}
+
+.excelWrapper {
+  background: white;
+  border-radius: 24px;
+  padding: 24px;
+  border: 1px solid rgba(15, 23, 42, 0.05);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.02);
+  animation: slideDown 0.3s ease-out;
+}
+
+@keyframes slideDown {
+  from { opacity: 0; transform: translateY(-10px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
 .dangerButton {
