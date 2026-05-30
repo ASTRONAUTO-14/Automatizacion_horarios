@@ -39,6 +39,16 @@ services:
     networks:
       - app-network
 
+  csp_solver:
+    build:
+      context: ./csp_solver
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    restart: unless-stopped
+    networks:
+      - app-network
+
 networks:
   app-network:
     driver: bridge

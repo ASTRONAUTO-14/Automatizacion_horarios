@@ -1,7 +1,8 @@
 import './globals.css'
+import { AuthProvider } from './context/AuthContext'
 
 export const metadata = {
-  title: 'Organizador de Horarios',
+  title: 'Optimizer EIS',
   description: 'Sistema de gestión de horarios para universidades y escuelas',
 }
 
@@ -12,7 +13,11 @@ export default function RootLayout({
 }) {
   return (
     <html lang="es">
-      <body>{children}</body>
+      <body>
+        <AuthProvider>
+          {children}
+        </AuthProvider>
+      </body>
     </html>
   )
 }

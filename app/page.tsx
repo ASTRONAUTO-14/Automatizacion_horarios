@@ -1,7 +1,5 @@
-'use client';
-
-import InterfaceApp from '../INTERFAZ/InterfaceApp';
+import { redirect } from 'next/navigation';
 
 export default function HomePage() {
-  return <InterfaceApp />;
+  redirect('/login');
 }

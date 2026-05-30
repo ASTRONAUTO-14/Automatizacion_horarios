@@ -10,7 +10,7 @@ export type DemoUser = {
 export type CourseTypeValue = 'theoretical' | 'programming' | 'electronics' | 'nursing';
 export type RoomTypeValue = 'classroom' | 'computer-lab' | 'workshop' | 'practical-lab';
 
-export type AppTab = 'dashboard' | 'courses' | 'teachers' | 'classrooms' | 'schedule';
+export type AppTab = 'dashboard' | 'courses' | 'cohorts' | 'teachers' | 'classrooms' | 'schedule';
 
 export interface Course {
   id: string;
@@ -18,15 +18,27 @@ export interface Course {
   type: CourseTypeValue;
   theoreticalHours: number;
   practicalHours: number;
-  students: number;
   program: string;
   semester: number;
-  teacherId: string;
+}
+
+export interface Cohort {
+  id: string;
+  name: string;
+  program: string;
+  semester: number;
+  students: number;
+  requiredCourses: Array<{
+    courseId: string;
+    hours: number;
+  }>;
 }
 
 export interface Teacher {
   id: string;
   name: string;
+  maxHours: number;
+  competencies: string[]; // Array of Course IDs
   availability: Record<number, number[]>;
 }
 
@@ -41,6 +53,7 @@ export interface ScheduleSession {
   courseId: string;
   teacherId: string;
   roomId: string;
+  cohortId?: string;
   sessionType: 'theoretical' | 'practical';
 }
 
@@ -69,6 +82,6 @@ export interface ToastMessage {
 
 export interface ModalState {
   open: boolean;
-  type: 'course' | 'teacher' | 'classroom' | null;
+  type: 'course' | 'cohort' | 'teacher' | 'classroom' | null;
   id: string | null;
 }
