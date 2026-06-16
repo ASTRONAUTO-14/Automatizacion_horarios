@@ -191,6 +191,14 @@ export async function POST(request: Request) {
               });
             }
 
+            // Validar capacidad del aula vs alumnos del curso
+            const aulaData = await tx.aula.findUnique({ where: { id_aula: roomId } });
+            const cursoData = await tx.curso.findUnique({ where: { id_curso: courseId } });
+
+            if (aulaData && cursoData && aulaData.capacidad < cursoData.alumnos) {
+              throw new Error('El aula seleccionada no tiene capacidad suficiente para el número de alumnos de este curso.');
+            }
+
             await tx.horario_sesion.create({
               data: {
                 id_horario: randomUUID(),
@@ -376,6 +384,14 @@ export async function POST(request: Request) {
         id_bloque = slotIndex;
       }
 
+      // Validar capacidad del aula vs alumnos del curso
+      const aulaData_ = await prisma.aula.findUnique({ where: { id_aula: idAula } });
+      const cursoData_ = await prisma.curso.findUnique({ where: { id_curso: idCurso } });
+
+      if (aulaData_ && cursoData_ && aulaData_.capacidad < cursoData_.alumnos) {
+        throw new Error('El aula seleccionada no tiene capacidad suficiente para el número de alumnos de este curso.');
+      }
+
       // Crear sesión de horario
       await prisma.horario_sesion.create({
         data: {
@@ -395,6 +411,9 @@ export async function POST(request: Request) {
     return NextResponse.json({ message: 'Importado con éxito' });
   } catch (error: any) {
     console.error('Error al importar:', error);
+    if (error.message === 'El aula seleccionada no tiene capacidad suficiente para el número de alumnos de este curso.') {
+      return NextResponse.json({ error: error.message }, { status: 400 });
+    }
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }
