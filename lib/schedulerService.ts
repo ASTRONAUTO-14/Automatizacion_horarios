@@ -12,9 +12,9 @@ export class SchedulerService {
   /**
    * Recopila los datos de la base de datos y los envía al solucionador CSP en Python.
    */
-  static async optimizeSchedule(userId: string) {
+  static async optimizeSchedule(userId: string, id_escenario?: string) {
     // 1. Obtener datos crudos de Prisma
-    const [docentesDB, aulasDB, materiasCohorteDB] = await Promise.all([
+    const [docentesDB, aulasDB, asignacionesDB] = await Promise.all([
       prisma.docente.findMany({
         where: { id_usuario: userId },
         include: {
@@ -25,23 +25,22 @@ export class SchedulerService {
       prisma.aula.findMany({
         where: { id_usuario: userId }
       }),
-      prisma.materia_cohorte.findMany({
-        where: { cohorte: { id_usuario: userId } },
+      prisma.asignacion.findMany({
         include: {
           curso: true,
-          cohorte: true
+          periodo: true
         }
       })
     ]);
 
-    if (docentesDB.length === 0 || aulasDB.length === 0 || materiasCohorteDB.length === 0) {
-      throw new Error('Faltan datos maestros (Docentes, Aulas o Cohortes) para generar el horario.');
+    if (docentesDB.length === 0 || aulasDB.length === 0 || asignacionesDB.length === 0) {
+      throw new Error('Faltan datos maestros (Docentes, Aulas o Asignaciones) para generar el horario.');
     }
 
     // 2. Transformar al formato del Microservicio Python (OptimizationRequest)
     const teachers = docentesDB.map(d => ({
       id: d.id_docente,
-      max_hours: d.max_horas_semanales || 40,
+      max_hours: 40,
       availabilities: d.disponibilidad_docente.map(disp => ({
         day: disp.id_dia,
         slot: disp.id_bloque
@@ -54,12 +53,12 @@ export class SchedulerService {
       capacity: a.capacidad
     }));
 
-    const classes = materiasCohorteDB.map(mc => ({
-      id: mc.id_materia_cohorte,
-      course_id: mc.id_curso,
-      cohort_id: mc.id_cohorte,
-      required_hours: mc.horas_requeridas,
-      students_count: mc.cohorte.num_alumnos
+    const classes = asignacionesDB.map(a => ({
+      id: a.id_asignacion,
+      course_id: a.id_curso,
+      cohort_id: 'default', // Para el solver
+      required_hours: (a.curso.horas_teoricas || 0) + (a.curso.horas_practicas || 0) || 4,
+      students_count: a.curso.alumnos || 30
     }));
 
     const payload: OptimizationRequest = {
@@ -73,11 +72,16 @@ export class SchedulerService {
     // 3. Llamar al Microservicio
     console.log('Enviando datos al motor CSP (OR-Tools)...');
     const cspUrl = process.env.CSP_SOLVER_URL || 'http://localhost:8000';
-    const response = await fetch(`${cspUrl}/optimize`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
-    });
+    let response;
+    try {
+      response = await fetch(`${cspUrl}/optimize`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+    } catch (e) {
+      throw new Error('No se pudo conectar con el motor CSP (Python). ¿Está corriendo en el puerto 8000?');
+    }
 
     if (!response.ok) {
       const errorText = await response.text();
@@ -97,33 +101,54 @@ export class SchedulerService {
     // 4. Procesar el resultado y guardar en Prisma (Transacción)
     const sessions = data.sessions;
 
+    let targetEscenarioId = id_escenario;
+
     await prisma.$transaction(async (tx) => {
-      // Opcional: Limpiar horarios anteriores para este periodo/usuario
-      await tx.horario_sesion.deleteMany({
-        where: { id_usuario: userId }
-      });
+      // Si no hay escenario destino, creamos uno de simulación
+      if (!targetEscenarioId) {
+        const nuevoEsc = await tx.escenario.create({
+          data: {
+            nom_escenario: `Generación Automática ${new Date().toLocaleDateString()}`,
+            descripcion: 'Horario generado por el Optimizador',
+            estado: 'simulation',
+            creado_por: userId,
+            cobertura: 100, // asumiendo éxito total, idealmente esto se calcula
+            conflictos: 0
+          }
+        });
+        targetEscenarioId = nuevoEsc.id_escenario;
+      } else {
+        // Limpiar horarios anteriores del escenario objetivo
+        await tx.horario_sesion.deleteMany({
+          where: { id_escenario: targetEscenarioId }
+        });
+      }
 
       // Crear las nuevas sesiones asignadas por el solucionador
       const newSessions = sessions.map((s: any) => ({
         id_horario: crypto.randomUUID(),
-        id_materia_cohorte: s.class_id,
+        id_asignacion: s.class_id,
         id_docente: s.teacher_id,
         id_aula: s.room_id,
         id_dia: s.day,
         id_bloque: s.slot,
-        id_periodo: 'Actual', 
-        tipo_sesion: 'theoretical', 
+        id_periodo: asignacionesDB.find(a => a.id_asignacion === s.class_id)?.id_periodo || 'N/A', 
+        tipo_sesion: 'Teórica', 
         id_usuario: userId,
+        id_escenario: targetEscenarioId
       }));
 
-      await tx.horario_sesion.createMany({
-        data: newSessions
-      });
+      if (newSessions.length > 0) {
+        await tx.horario_sesion.createMany({
+          data: newSessions
+        });
+      }
     });
 
     return {
       message: data.message,
-      total_sessions_assigned: sessions.length
+      total_sessions_assigned: sessions.length,
+      escenario_id: targetEscenarioId
     };
   }
 }

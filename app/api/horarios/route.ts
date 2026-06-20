@@ -56,8 +56,19 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url);
     const userId = searchParams.get('userId');
 
+    const publishedEscenario = await prisma.escenario.findFirst({
+      where: { estado: 'published', creado_por: userId || undefined }
+    });
+
+    const whereClause: any = userId ? { id_usuario: userId } : {};
+    if (publishedEscenario) {
+      whereClause.id_escenario = publishedEscenario.id_escenario;
+    } else {
+      whereClause.id_escenario = null;
+    }
+
     const sessions = await prisma.horario_sesion.findMany({
-      where: userId ? { id_usuario: userId } : {},
+      where: whereClause,
       include: {
         asignacion: {
           include: {

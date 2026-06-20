@@ -157,6 +157,7 @@ model horario_sesion {
   id_bloque      Int
   tipo_sesion    String            @db.VarChar
   id_usuario     String?           @db.VarChar
+  id_escenario   String?           @db.VarChar
   asignacion     asignacion        @relation(fields: [id_asignacion], references: [id_asignacion], onDelete: Cascade, map: "horario_sesion_asignacion_fk")
   aula           aula              @relation(fields: [id_aula], references: [id_aula], onDelete: Cascade, map: "horario_sesion_aula_fk")
   bloque_horario bloque_horario    @relation(fields: [id_bloque], references: [id_bloque], onDelete: Cascade, map: "horario_sesion_bloque_fk")
@@ -164,13 +165,15 @@ model horario_sesion {
   docente        docente           @relation(fields: [id_docente], references: [id_docente], onDelete: Cascade, map: "horario_sesion_docente_fk")
   periodo        periodo_academico @relation(fields: [id_periodo], references: [id_periodo], onDelete: Cascade, map: "horario_sesion_periodo_fk")
   usuario        usuario?          @relation(fields: [id_usuario], references: [id_usuario], onDelete: Cascade, map: "horario_sesion_usuario_fk")
+  escenario      escenario?        @relation(fields: [id_escenario], references: [id_escenario], onDelete: Cascade, map: "horario_sesion_escenario_fk")
 
-  @@unique([id_docente, id_dia, id_bloque, id_periodo], map: "horario_sesion_docente_uq")
-  @@unique([id_aula, id_dia, id_bloque, id_periodo], map: "horario_sesion_aula_uq")
-  @@unique([id_asignacion, id_dia, id_bloque, tipo_sesion], map: "horario_sesion_asignacion_uq")
+  @@unique([id_docente, id_dia, id_bloque, id_periodo, id_escenario], map: "horario_sesion_docente_uq")
+  @@unique([id_aula, id_dia, id_bloque, id_periodo, id_escenario], map: "horario_sesion_aula_uq")
+  @@unique([id_asignacion, id_dia, id_bloque, tipo_sesion, id_escenario], map: "horario_sesion_asignacion_uq")
   @@index([id_asignacion])
   @@index([id_aula])
   @@index([id_docente])
+  @@index([id_escenario])
 }
 
 model usuario {
@@ -193,4 +196,17 @@ model competencia_docente {
   @@id([id_docente, id_curso], map: "competencia_docente_pk")
   @@index([id_curso])
   @@index([id_docente])
+}
+
+model escenario {
+  id_escenario   String   @id(map: "escenario_pk") @default(uuid()) @db.VarChar
+  nom_escenario  String   @db.VarChar
+  descripcion    String?  @db.VarChar
+  estado         String   @db.VarChar // "borrador", "simulacion", "publicado"
+  cobertura      Int      @default(0)
+  conflictos     Int      @default(0)
+  creado_el      DateTime @default(now())
+  creado_por     String?  @db.VarChar
+  
+  horario_sesion horario_sesion[]
 }
