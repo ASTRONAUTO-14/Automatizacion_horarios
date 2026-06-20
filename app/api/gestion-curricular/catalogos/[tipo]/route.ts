@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import crypto from 'crypto';
 
 export async function POST(req: Request, props: { params: Promise<{ tipo: string }> }) {
   try {
@@ -11,22 +12,33 @@ export async function POST(req: Request, props: { params: Promise<{ tipo: string
 
     switch (tipo) {
       case 'facultad':
+        if (!data.id_facultad) data.id_facultad = `FAC-${crypto.randomUUID().substring(0, 8)}`;
         result = await prisma.facultad.create({ data });
         break;
       case 'carrera':
+        if (!data.id_carrera) data.id_carrera = `CAR-${crypto.randomUUID().substring(0, 8)}`;
         result = await prisma.carrera.create({ data });
         break;
       case 'ciclo':
+        if (!data.id_ciclo) {
+          const maxCiclo = await prisma.ciclo.aggregate({ _max: { id_ciclo: true } });
+          data.id_ciclo = (maxCiclo._max.id_ciclo || 0) + 1;
+        } else {
+          data.id_ciclo = parseInt(data.id_ciclo);
+        }
         result = await prisma.ciclo.create({
           data: {
+            id_ciclo: data.id_ciclo,
             nom_ciclo: data.nom_ciclo
           }
         });
         break;
       case 'plan-estudio':
+        if (!data.id_plan) data.id_plan = `PLAN-${crypto.randomUUID().substring(0, 8)}`;
         result = await prisma.plan_estudio.create({ data });
         break;
       case 'tipo-sesion':
+        if (!data.id_tipo_sesion) data.id_tipo_sesion = `SES-${crypto.randomUUID().substring(0, 8)}`;
         result = await prisma.tipo_sesion.create({ data });
         break;
       default:
