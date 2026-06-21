@@ -35,11 +35,6 @@ export async function createEscenario(data: { name: string, type: string, descri
 }
 
 export async function deleteEscenario(id: string) {
-  const e = await prisma.escenario.findUnique({ where: { id_escenario: id } });
-  if (e?.estado === 'published') {
-    throw new Error('No puedes eliminar un escenario publicado. Publica otro primero.');
-  }
-
   // Las sesiones asociadas se eliminan en cascada gracias al onDelete: Cascade en schema.prisma
   await prisma.escenario.delete({ where: { id_escenario: id } });
   revalidatePath('/dashboard/escenarios');

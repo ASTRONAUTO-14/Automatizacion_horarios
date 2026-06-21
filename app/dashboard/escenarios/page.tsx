@@ -205,27 +205,41 @@ export default function EscenariosPage() {
                 <div style={{ fontSize: 13, fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 12 }}>Acciones disponibles</div>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
                   
+                  {sel.status === 'draft' && (
+                    <button onClick={() => window.location.href = '/dashboard/horarios'} disabled={isProcessing} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '14px 16px', background: 'white', border: '1.5px solid #e2e8f0', borderRadius: 12, cursor: 'pointer', fontSize: 13.5, fontWeight: 600, color: '#0f172a', fontFamily: 'inherit', textAlign: 'left', opacity: isProcessing ? 0.7 : 1, gridColumn: '1/-1' }}>
+                      <div style={{ padding: 8, background: '#f1f5f9', borderRadius: 9 }}><Clock style={{ width: 15, height: 15, color: '#475569' }} /></div>
+                      <div>
+                        <div>Editar Manualmente (Gestor)</div>
+                        <div style={{ fontSize: 11, color: '#64748b', marginTop: 2, fontWeight: 500 }}>Este es un borrador diseñado para modificaciones manuales.</div>
+                      </div>
+                      <ArrowRight style={{ width: 15, height: 15, marginLeft: 'auto', color: '#64748b' }} />
+                    </button>
+                  )}
+
+                  <button onClick={() => handleOptimize(sel.id)} disabled={isProcessing} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '14px 16px', background: 'white', border: '1.5px solid #e2e8f0', borderRadius: 12, cursor: isProcessing ? 'not-allowed' : 'pointer', fontSize: 13.5, fontWeight: 600, color: '#8b5cf6', fontFamily: 'inherit', textAlign: 'left', opacity: isProcessing ? 0.7 : 1, gridColumn: sel.status === 'simulation' ? '1/-1' : 'auto' }}>
+                    <div style={{ padding: 8, background: '#f5f3ff', borderRadius: 9 }}><Zap style={{ width: 15, height: 15, color: '#8b5cf6' }} /></div>
+                    <div>
+                      <div>Re-optimizar (IA)</div>
+                      {sel.status === 'simulation' && <div style={{ fontSize: 11, color: '#64748b', marginTop: 2, fontWeight: 500 }}>Las simulaciones se generan y actualizan automáticamente por el motor CSP.</div>}
+                    </div>
+                  </button>
+
                   <button onClick={() => handleDuplicate(sel.id)} disabled={isProcessing} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '14px 16px', background: 'white', border: '1.5px solid #e2e8f0', borderRadius: 12, cursor: 'pointer', fontSize: 13.5, fontWeight: 600, color: '#334155', fontFamily: 'inherit', transition: 'all 0.15s', textAlign: 'left', opacity: isProcessing ? 0.7 : 1 }}>
                     <div style={{ padding: 8, background: '#eff6ff', borderRadius: 9 }}><Copy style={{ width: 15, height: 15, color: '#3b82f6' }} /></div>
                     Duplicar escenario
                   </button>
                   
-                  <button onClick={() => handleOptimize(sel.id)} disabled={isProcessing || sel.status === 'published'} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '14px 16px', background: 'white', border: '1.5px solid #e2e8f0', borderRadius: 12, cursor: (isProcessing || sel.status === 'published') ? 'not-allowed' : 'pointer', fontSize: 13.5, fontWeight: 600, color: '#8b5cf6', fontFamily: 'inherit', textAlign: 'left', opacity: (isProcessing || sel.status === 'published') ? 0.7 : 1 }}>
-                    <div style={{ padding: 8, background: '#f5f3ff', borderRadius: 9 }}><Zap style={{ width: 15, height: 15, color: '#8b5cf6' }} /></div>
-                    {isProcessing ? 'Optimizando...' : 'Re-optimizar (CSP)'}
-                  </button>
-                  
                   {sel.status !== 'published' && (
-                    <button onClick={() => handlePublish(sel.id)} disabled={isProcessing} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '14px 16px', background: '#f0fdf4', border: '1.5px solid #a7f3d0', borderRadius: 12, cursor: 'pointer', fontSize: 13.5, fontWeight: 700, color: '#065f46', fontFamily: 'inherit', gridColumn: '1/-1', opacity: isProcessing ? 0.7 : 1 }}>
+                    <button onClick={() => handlePublish(sel.id)} disabled={isProcessing || sel.coverage === 0} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '14px 16px', background: '#f0fdf4', border: '1.5px solid #a7f3d0', borderRadius: 12, cursor: (isProcessing || sel.coverage === 0) ? 'not-allowed' : 'pointer', fontSize: 13.5, fontWeight: 700, color: '#065f46', fontFamily: 'inherit', gridColumn: '1/-1', opacity: (isProcessing || sel.coverage === 0) ? 0.7 : 1 }}>
                       <div style={{ padding: 8, background: '#10b981', borderRadius: 9 }}><CheckCircle2 style={{ width: 15, height: 15, color: 'white' }} /></div>
                       Publicar este escenario como horario oficial
                       <ArrowRight style={{ width: 15, height: 15, marginLeft: 'auto' }} />
                     </button>
                   )}
                   
-                  <button onClick={() => handleDelete(sel.id)} disabled={isProcessing || sel.status === 'published'} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '14px 16px', background: '#fef2f2', border: '1.5px solid #fecaca', borderRadius: 12, cursor: sel.status === 'published' ? 'not-allowed' : 'pointer', fontSize: 13.5, fontWeight: 600, color: '#b91c1c', fontFamily: 'inherit', gridColumn: sel.status !== 'published' ? '1/-1' : 'auto', opacity: (isProcessing || sel.status === 'published') ? 0.7 : 1 }}>
+                  <button onClick={() => handleDelete(sel.id)} disabled={isProcessing} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '14px 16px', background: '#fef2f2', border: '1.5px solid #fecaca', borderRadius: 12, cursor: 'pointer', fontSize: 13.5, fontWeight: 600, color: '#b91c1c', fontFamily: 'inherit', gridColumn: sel.status !== 'published' ? '1/-1' : 'auto', opacity: isProcessing ? 0.7 : 1 }}>
                     <div style={{ padding: 8, background: '#fee2e2', borderRadius: 9 }}><Trash2 style={{ width: 15, height: 15, color: '#ef4444' }} /></div>
-                    Eliminar escenario
+                    {sel.status === 'published' ? 'Eliminar (Despublicar)' : 'Eliminar escenario'}
                   </button>
 
                 </div>

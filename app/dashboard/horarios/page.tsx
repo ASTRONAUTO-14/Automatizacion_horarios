@@ -3,8 +3,9 @@
 import { useState, useEffect } from 'react';
 import {
   Calendar, ChevronLeft, ChevronRight, CheckCircle2, Clock, Archive,
-  GitBranch, AlertCircle, User, Home, BookOpen, RefreshCw
+  GitBranch, AlertCircle, User, Home, BookOpen, RefreshCw, Edit3, X
 } from 'lucide-react';
+import { getAulas, updateSessionSlot } from './actions';
 
 // ── Types ──────────────────────────────────────────────────────────────────
 interface Escenario {
@@ -24,8 +25,16 @@ interface Session {
   slot: number;   // 0…4
   course: string;
   teacher: string;
+  teacher: string;
   room: string;
   tipo: string;
+  id_aula?: string; // needed for modal default value
+}
+
+interface Aula {
+  id_aula: string;
+  nom_aula: string;
+  capacidad: number;
 }
 
 // ── Constants ──────────────────────────────────────────────────────────────
@@ -64,6 +73,12 @@ export default function HorariosPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [courseColors, setCourseColors] = useState<Record<string, string>>({});
+  
+  // Modal state
+  const [aulas, setAulas] = useState<Aula[]>([]);
+  const [editingSession, setEditingSession] = useState<Session | null>(null);
+  const [editForm, setEditForm] = useState({ day: 0, slot: 0, roomId: '' });
+  const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => { loadData(); }, []);
 
@@ -71,10 +86,14 @@ export default function HorariosPage() {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch('/api/escenarios-con-sesiones');
+      const [res, aulasData] = await Promise.all([
+        fetch('/api/escenarios-con-sesiones'),
+        getAulas()
+      ]);
       if (!res.ok) throw new Error('Error al cargar escenarios');
       const data: Escenario[] = await res.json();
       setEscenarios(data);
+      setAulas(aulasData);
 
       // Assign stable colors to courses
       const allCourses = Array.from(new Set(data.flatMap(e => e.sessions.map(s => s.course))));
@@ -99,6 +118,30 @@ export default function HorariosPage() {
   activeEscenario?.sessions.forEach(s => {
     grid[`${s.day}-${s.slot}`] = s;
   });
+
+  const handleEditClick = (sess: Session) => {
+    if (activeEscenario?.status !== 'draft') return;
+    
+    // Encontramos el id_aula actual para pre-seleccionarlo
+    const currentAula = aulas.find(a => a.nom_aula === sess.room)?.id_aula || '';
+    
+    setEditForm({ day: sess.day, slot: sess.slot, roomId: currentAula });
+    setEditingSession(sess);
+  };
+
+  const handleSaveEdit = async () => {
+    if (!editingSession) return;
+    setIsSaving(true);
+    try {
+      await updateSessionSlot(editingSession.id, editForm.day, editForm.slot, editForm.roomId);
+      await loadData();
+      setEditingSession(null);
+    } catch (e: any) {
+      alert(e.message);
+    } finally {
+      setIsSaving(false);
+    }
+  };
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 24, maxWidth: 1400, margin: '0 auto' }}>
@@ -194,6 +237,11 @@ export default function HorariosPage() {
                       <CheckCircle2 style={{ width: 14, height: 14 }} /> Horario Oficial
                     </span>
                   )}
+                  {activeEscenario.status === 'draft' && (
+                    <span style={{ marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', gap: 6, padding: '6px 14px', background: '#eff6ff', border: '1.5px solid #bfdbfe', borderRadius: 20, color: '#1d4ed8', fontSize: 13, fontWeight: 700 }}>
+                      <Edit3 style={{ width: 14, height: 14 }} /> Modo Edición Activo (Clic en curso para mover)
+                    </span>
+                  )}
                 </div>
 
                 {/* Calendar Grid */}
@@ -226,7 +274,20 @@ export default function HorariosPage() {
                               return (
                                 <td key={dayIdx} style={{ padding: 6, border: '1px solid #f1f5f9', verticalAlign: 'top', minWidth: 140 }}>
                                   {sess ? (
-                                    <div style={{ background: color + '15', border: `1.5px solid ${color}40`, borderLeft: `4px solid ${color}`, borderRadius: 8, padding: '8px 10px' }}>
+                                    <div 
+                                      onClick={() => handleEditClick(sess)}
+                                      style={{ 
+                                        background: color + '15', 
+                                        border: `1.5px solid ${color}40`, 
+                                        borderLeft: `4px solid ${color}`, 
+                                        borderRadius: 8, 
+                                        padding: '8px 10px',
+                                        cursor: activeEscenario.status === 'draft' ? 'pointer' : 'default',
+                                        transition: 'transform 0.1s',
+                                      }}
+                                      onMouseEnter={(e) => activeEscenario.status === 'draft' && (e.currentTarget.style.transform = 'translateY(-2px)', e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.08)')}
+                                      onMouseLeave={(e) => activeEscenario.status === 'draft' && (e.currentTarget.style.transform = 'none', e.currentTarget.style.boxShadow = 'none')}
+                                    >
                                       <div style={{ fontSize: 12.5, fontWeight: 700, color: '#0f172a', marginBottom: 4 }}>{sess.course}</div>
                                       <div style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, color: '#475569' }}>
                                         <User style={{ width: 10, height: 10 }} /> {sess.teacher}
@@ -270,6 +331,55 @@ export default function HorariosPage() {
           </div>
         </div>
       )}
+
+      {/* ── Edit Modal ── */}
+      {editingSession && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 100, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20, background: 'rgba(15,23,42,0.55)', backdropFilter: 'blur(4px)' }}>
+          <div style={{ background: 'white', width: '100%', maxWidth: 450, borderRadius: 20, boxShadow: '0 24px 64px rgba(0,0,0,0.18)', overflow: 'hidden' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '18px 24px', borderBottom: '1px solid #f1f5f9', background: '#f8fafc' }}>
+              <h2 style={{ fontSize: 16, fontWeight: 800, color: '#0f172a', margin: 0 }}>Mover Sesión</h2>
+              <button onClick={() => setEditingSession(null)} style={{ padding: 6, border: 'none', background: '#f1f5f9', borderRadius: 8, cursor: 'pointer', display: 'flex', color: '#64748b' }}><X style={{ width: 15, height: 15 }} /></button>
+            </div>
+            <div style={{ padding: 24, display: 'flex', flexDirection: 'column', gap: 16 }}>
+              
+              <div style={{ padding: '12px 16px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 12 }}>
+                <div style={{ fontSize: 14, fontWeight: 700, color: '#0f172a' }}>{editingSession.course}</div>
+                <div style={{ fontSize: 12.5, color: '#475569', marginTop: 4, display: 'flex', gap: 12 }}>
+                  <span><User style={{ width: 12, height: 12, display: 'inline', verticalAlign: '-2px' }} /> {editingSession.teacher}</span>
+                  <span><Clock style={{ width: 12, height: 12, display: 'inline', verticalAlign: '-2px' }} /> {editingSession.tipo}</span>
+                </div>
+              </div>
+
+              <div>
+                <label style={{ fontSize: 13, fontWeight: 600, color: '#374151', display: 'block', marginBottom: 6 }}>Día de la semana</label>
+                <select value={editForm.day} onChange={e => setEditForm(prev => ({ ...prev, day: Number(e.target.value) }))} style={{ width: '100%', padding: '10px 14px', border: '1.5px solid #e2e8f0', borderRadius: 10, fontSize: 14, outline: 'none', fontFamily: 'inherit' }}>
+                  {DAYS.map((d, i) => <option key={i} value={i}>{d}</option>)}
+                </select>
+              </div>
+
+              <div>
+                <label style={{ fontSize: 13, fontWeight: 600, color: '#374151', display: 'block', marginBottom: 6 }}>Bloque Horario</label>
+                <select value={editForm.slot} onChange={e => setEditForm(prev => ({ ...prev, slot: Number(e.target.value) }))} style={{ width: '100%', padding: '10px 14px', border: '1.5px solid #e2e8f0', borderRadius: 10, fontSize: 14, outline: 'none', fontFamily: 'inherit' }}>
+                  {SLOTS.map((s, i) => <option key={i} value={i}>{s.label}</option>)}
+                </select>
+              </div>
+
+              <div>
+                <label style={{ fontSize: 13, fontWeight: 600, color: '#374151', display: 'block', marginBottom: 6 }}>Aula</label>
+                <select value={editForm.roomId} onChange={e => setEditForm(prev => ({ ...prev, roomId: e.target.value }))} style={{ width: '100%', padding: '10px 14px', border: '1.5px solid #e2e8f0', borderRadius: 10, fontSize: 14, outline: 'none', fontFamily: 'inherit' }}>
+                  {aulas.map(a => <option key={a.id_aula} value={a.id_aula}>{a.nom_aula} (Cap: {a.capacidad})</option>)}
+                </select>
+              </div>
+
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, padding: '16px 24px', borderTop: '1px solid #f1f5f9', background: '#f8fafc' }}>
+              <button onClick={() => setEditingSession(null)} disabled={isSaving} style={{ padding: '9px 18px', border: '1.5px solid #e2e8f0', borderRadius: 10, background: 'white', fontSize: 13.5, fontWeight: 600, color: '#475569', cursor: 'pointer', fontFamily: 'inherit' }}>Cancelar</button>
+              <button onClick={handleSaveEdit} disabled={isSaving || !editForm.roomId} style={{ padding: '9px 18px', background: '#0f172a', border: 'none', borderRadius: 10, fontSize: 13.5, fontWeight: 700, color: 'white', cursor: 'pointer', fontFamily: 'inherit', opacity: (isSaving || !editForm.roomId) ? 0.7 : 1 }}>{isSaving ? 'Guardando...' : 'Guardar Cambios'}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }
